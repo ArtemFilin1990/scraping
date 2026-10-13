@@ -123,7 +123,7 @@ describe('executeSearch', () => {
       );
     });
 
-    it('forwards client model and ignores legacy search objective', async () => {
+    it('ignores legacy search task context', async () => {
       mockHttpPost.mockResolvedValue(mockSearchResponse({ web: [] }));
 
       const options = {
@@ -136,10 +136,11 @@ describe('executeSearch', () => {
       expect(mockHttpPost).toHaveBeenCalledWith(
         '/v2/search',
         expect.objectContaining({
-          clientModel: 'claude-sonnet-4-6',
+          query: 'React memo docs',
         })
       );
       expect(mockHttpPost.mock.calls[0][1]).not.toHaveProperty('objective');
+      expect(mockHttpPost.mock.calls[0][1]).not.toHaveProperty('clientModel');
     });
 
     it('should pass apiUrl to getClient when provided', async () => {

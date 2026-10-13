@@ -32,7 +32,6 @@ export async function executeSearch(
       limit: options.limit ?? DEFAULT_SEARCH_LIMIT,
       integration: 'cli',
     };
-    if (options.clientModel) searchParams.clientModel = options.clientModel;
     searchParams.toolDetail = options.toolDetail ?? 'compact';
     if (options.domainTools !== undefined)
       searchParams.domainTools = options.domainTools;
