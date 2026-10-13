@@ -926,7 +926,7 @@ function createSearchCommand(): Command {
     )
     .argument('<query>', 'Search query, or alexandria for semantic tool search')
     .argument('[tool-query]', 'Query for search alexandria')
-    .option('--objective <goal>', 'Broader task goal behind this search')
+    .addOption(new Option('--objective <goal>').hideHelp())
     .option(
       '--client-model <model>',
       'Model issuing and consuming the results, if known'
@@ -1066,7 +1066,6 @@ function createSearchCommand(): Command {
 
       const searchOptions = {
         query,
-        objective: options.objective,
         clientModel: options.clientModel,
         toolDetail: options.toolDetail,
         domainTools:
