@@ -19,6 +19,7 @@ export interface EndpointFeedbackOptions {
   jobId?: string;
   requestedWebsite?: { url: string; requestedFunctionality: string };
   rationale?: string;
+  objective?: string;
   providerFeedback?: Record<string, unknown>[];
   capabilityFeedback?: Record<string, unknown>[];
   rating: SearchFeedbackRating;
@@ -58,6 +59,7 @@ export interface EndpointFeedbackResult {
   creditsRefundedToday?: number;
   dailyRefundCap?: number;
   dailyCapReached?: boolean;
+  websiteCapReached?: boolean;
   alreadySubmitted?: boolean;
   warning?: string;
   error?: string;
@@ -282,6 +284,7 @@ export async function executeEndpointFeedback(
         ? [
             ['requestedWebsite', options.requestedWebsite],
             ['rationale', options.rationale],
+            ['objective', options.objective],
             ['providerFeedback', options.providerFeedback],
             ['capabilityFeedback', options.capabilityFeedback],
           ]
@@ -359,6 +362,7 @@ export async function executeEndpointFeedback(
           ? data.dailyRefundCap
           : undefined,
       dailyCapReached: data.dailyCapReached === true,
+      ...(data.websiteCapReached === true ? { websiteCapReached: true } : {}),
       alreadySubmitted: data.alreadySubmitted,
       warning: data.warning,
     };
@@ -392,6 +396,10 @@ function formatReadable(result: EndpointFeedbackResult): string {
   if (result.dailyCapReached) {
     lines.push(
       'Daily refund cap reached; further feedback calls today will not refund credits.'
+    );
+  } else if (result.websiteCapReached) {
+    lines.push(
+      'Daily refund cap reached for this website; feedback about other websites can still refund credits.'
     );
   }
   if (result.warning) {
@@ -444,6 +452,7 @@ export async function handleEndpointFeedbackCommand(
         ? { dailyRefundCap: result.dailyRefundCap }
         : {}),
       ...(result.dailyCapReached ? { dailyCapReached: true } : {}),
+      ...(result.websiteCapReached ? { websiteCapReached: true } : {}),
       ...(result.alreadySubmitted ? { alreadySubmitted: true } : {}),
       ...(result.warning ? { warning: result.warning } : {}),
     };

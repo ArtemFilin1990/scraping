@@ -5,7 +5,7 @@
 import type { ScrapeFormat } from './scrape';
 
 export type SearchSource = 'web' | 'images' | 'news' | 'alexandria';
-export type SearchCategory = 'research' | 'pdf' | 'developer';
+export type SearchCategory = 'research' | 'pdf' | 'developer' | 'gov';
 
 export interface SearchOptions {
   domainTools?: boolean;
@@ -20,7 +20,7 @@ export interface SearchOptions {
   limit?: number;
   /** Sources to search: web, images, news, alexandria (CLI default: web,alexandria) */
   sources?: SearchSource[];
-  /** Categories to filter results: research, pdf, developer */
+  /** Categories to filter results: research, pdf, developer, gov */
   categories?: SearchCategory[];
   /** Time-based search parameter (e.g., qdr:h, qdr:d, qdr:w, qdr:m, qdr:y) */
   tbs?: string;

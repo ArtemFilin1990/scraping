@@ -27,7 +27,13 @@ firecrawl search "your query" --sources news --tbs qdr:d -o .firecrawl/news.json
 
 Use `firecrawl search --help` for search options, `firecrawl list --help` for contract browsing, and `firecrawl scrape --help` for execution options.
 
-`--categories developer` searches an index of public repositories, GitHub issues, merged pull requests, repository READMEs, and curated documentation sites. `--categories research` is a website filter, not the paper index. Dedicated skills: [firecrawl-developer-index](../firecrawl-developer-index/SKILL.md) and [firecrawl-research-index](../firecrawl-research-index/SKILL.md).
+`--categories developer` searches an index of public repositories, GitHub issues, merged pull requests, repository READMEs, and curated documentation sites. `--categories gov` searches US federal, state, and local government legal and regulatory sources and cannot be combined with other categories. `--categories research` is a website filter, not the paper index. Dedicated skills: [firecrawl-developer-index](../firecrawl-developer-index/SKILL.md) and [firecrawl-research-index](../firecrawl-research-index/SKILL.md).
+
+## Government Index
+
+For US legal or regulatory source discovery, use `firecrawl gov "<question, jurisdiction, and date>" --limit 10`. Use `--limit` for result count; `-k` is the API-key option. `search --categories gov` also uses `--limit` and returns results in `data.web`; run other categories separately rather than combining them with `gov`.
+
+Read a supplied source URL directly with `scrape`. Before citing current governing law, verify the source's issuer, jurisdiction, enacted/effective status, and version. Bill text, agency guidance, historical versions, and third-party reproductions need that verification too. Ask for a missing jurisdiction before selecting a rule; use general search for non-US questions or missing coverage. No hits does not prove that no applicable law exists.
 
 **Done when:** relevant results have been inspected, per-call errors and empty results have been checked, the request has been answered with source links, and feedback is sent within the time window unless opted out.
 
@@ -53,7 +59,7 @@ Use `list` for category/provider browsing and selected contracts. For a known we
 
 If no returned tool covers the country/market/segment or required inputs, continue with ordinary web results. Do not exhaust the catalogue or pay for adjacent tools just to probe coverage. `--sources web` explicitly opts out of Alexandria; `--sources web --domain-tools` retains domain matches only.
 
-Whenever you looked for or ran an Alexandria tool, send `firecrawl alexandria feedback` once you are done, including when nothing covered the site. It is free and runs in the background; the pattern and rules live in [firecrawl-alexandria](../firecrawl-alexandria/SKILL.md).
+For Alexandria feedback about a provider result or coverage gap (each refunds 1 credit, up to 10 per website and 100 per team each UTC day), see [firecrawl-alexandria](../firecrawl-alexandria/SKILL.md).
 
 ## Progressive discovery and output handling
 
