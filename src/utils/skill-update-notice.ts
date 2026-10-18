@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { colorizeUpdateNotice, formatUpdateBox } from './update-notice-format';
 import {
   fetchCatalogTree,
   isSkillFile,
@@ -13,6 +14,7 @@ import {
 const CHECK_TTL_MS = 20 * 60 * 60 * 1000;
 const NOTICE_TTL_MS = 12 * 60 * 60 * 1000;
 const RETRY_TTL_MS = 60 * 60 * 1000;
+const CHANGES_URL = 'https://github.com/firecrawl/skills/commits/main/';
 const SOURCES = new Set([
   'firecrawl/skills',
   'firecrawl/cli',
@@ -189,7 +191,9 @@ export async function maybeShowSkillUpdateNotice(
         !cache.lastShownAt ||
         now - cache.lastShownAt > NOTICE_TTL_MS)
     ) {
-      const lines = ['Firecrawl skill updates available:'];
+      const title = 'Skill updates available!';
+      const lines = [`✨ ${title}`];
+      const commands: string[] = [];
       for (const family of ['core', 'build', 'workflows'] as const) {
         const group = changes.filter((skill) => skill.family === family);
         if (!group.length) continue;
@@ -197,11 +201,20 @@ export async function maybeShowSkillUpdateNotice(
           installed.has(skill.name)
         ).length;
         lines.push(
-          `  ${family}: ${updated} changed, ${group.length - updated} available to add`
+          `${family}: ${updated} changed, ${group.length - updated} available to add`
         );
-        lines.push(`  Run firecrawl setup ${family} to refresh.`);
+        const command = `firecrawl setup ${family}`;
+        commands.push(command);
+        lines.push(`Run ${command} to update.`);
       }
-      stderr.write(`${lines.join('\n')}\n\n`);
+      lines.push('', 'See latest skill changes:', CHANGES_URL);
+      stderr.write(
+        `${colorizeUpdateNotice(formatUpdateBox(lines), stderr, {
+          title,
+          commands,
+          url: CHANGES_URL,
+        })}\n\n`
+      );
       cache.lastShown = signature;
       cache.lastShownAt = now;
     } else if (!changes.length) {

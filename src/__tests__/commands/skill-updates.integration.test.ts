@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createServer, type Server } from 'http';
+import { stripVTControlCharacters } from 'util';
 import { installSkillsNative } from '../../commands/skills-native';
 import { handleSetupCommand } from '../../commands/setup';
 import { maybeShowSkillUpdateNotice } from '../../utils/skill-update-notice';
@@ -24,7 +25,10 @@ describe('skill update lifecycle', () => {
   let status: number;
   let requests: number;
   let stalled: boolean;
-  let stderr = { isTTY: true, write: vi.fn(() => true) };
+  let stderr = {
+    isTTY: true,
+    write: vi.fn((_chunk: string | Uint8Array) => true),
+  };
   const now = new Date('2026-01-01T00:00:00Z');
   const originalFetch = globalThis.fetch;
 
@@ -140,7 +144,10 @@ describe('skill update lifecycle', () => {
     );
     vi.stubEnv('FIRECRAWL_NO_UPDATE_CHECK', '');
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    stderr = { isTTY: true, write: vi.fn(() => true) };
+    stderr = {
+      isTTY: true,
+      write: vi.fn((_chunk: string | Uint8Array) => true),
+    };
   });
 
   afterEach(async () => {
@@ -171,6 +178,8 @@ describe('skill update lifecycle', () => {
     skill('workflows', 'firecrawl-new-workflow');
     publish();
 
+    vi.stubEnv('NO_COLOR', undefined);
+    vi.stubEnv('FORCE_COLOR', '1');
     await maybeShowSkillUpdateNotice({ now, stderr });
     expect(stderr.write).toHaveBeenCalledWith(
       expect.stringContaining('workflows: 1 changed, 1 available to add')
@@ -178,6 +187,16 @@ describe('skill update lifecycle', () => {
     expect(stderr.write).toHaveBeenCalledWith(
       expect.stringContaining('firecrawl setup workflows')
     );
+    const coloredNotice = String(stderr.write.mock.calls[0][0]);
+    const notice = stripVTControlCharacters(coloredNotice);
+    expect(notice.startsWith('╭')).toBe(true);
+    expect(notice.trimEnd().endsWith('╯')).toBe(true);
+    expect(notice).toContain('✨ Skill updates available!');
+    expect(notice).toContain('Run firecrawl setup workflows to update.');
+    expect(notice).toContain(
+      'https://github.com/firecrawl/skills/commits/main/'
+    );
+    expect(coloredNotice).toContain('\x1b[1;36mSkill updates available!');
     expect(fs.readFileSync(reference, 'utf8')).toBe('Original reference\n');
     expect(fs.readFileSync(lockPath, 'utf8')).toBe(lockBefore);
     expect(requests).toBe(1);
@@ -188,11 +207,13 @@ describe('skill update lifecycle', () => {
       stderr,
     });
     expect(stderr.write).not.toHaveBeenCalled();
+    vi.stubEnv('NO_COLOR', '1');
     await maybeShowSkillUpdateNotice({
       now: new Date(now.getTime() + 13 * 60 * 60 * 1000),
       stderr,
     });
     expect(stderr.write).toHaveBeenCalledOnce();
+    expect(String(stderr.write.mock.calls[0][0])).not.toContain('\x1b[');
     expect(requests).toBe(1);
 
     await handleSetupCommand('workflows', {

@@ -97,10 +97,11 @@ firecrawl setup workflows
 
 ### Skill updates
 
-Interactive CLI sessions show a notice when installed Firecrawl skills differ
-from the current catalog. The check includes supporting reference files and runs
-independently of CLI releases. If a family's umbrella skill is installed, the
-notice also offers other skills available in that family.
+Interactive CLI sessions show a boxed notice, matching the CLI update notice,
+when installed Firecrawl skills differ from the current catalog. The check includes
+supporting reference files and runs independently of CLI releases. If a family's
+umbrella skill is installed, the notice also offers other skills available in that
+family.
 
 Run the suggested `firecrawl setup core`, `firecrawl setup build`, or
 `firecrawl setup workflows` command to refresh the entire family. These commands
