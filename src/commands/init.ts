@@ -16,9 +16,9 @@ import { updateConfig, getApiKey } from '../utils/config';
 import {
   buildSkillsInstallArgs,
   cleanNpmEnv,
+  resolveSkillSelection,
   CLI_SKILL_SELECTION,
   WORKFLOW_SKILL_SELECTION,
-  WORKFLOW_SKILLS,
   type SkillSelection,
 } from './skills-install';
 import {
@@ -166,6 +166,7 @@ async function installSkillRepoQuiet(
   if (useNative) {
     try {
       const result = await installSkillsNative(repo, {
+        family: selection.family,
         agent: options.agent,
         quiet: true,
         skills: selection.skills,
@@ -190,13 +191,14 @@ async function installSkillRepoQuiet(
 
   // Fallback: npx skills add (copies files, may spray to all agents)
   if (hasNpx()) {
+    const skills = await resolveSkillSelection(selection);
     const args = buildSkillsInstallArgs({
       repo,
       agent: options.agent,
       yes: options.yes || options.all || true,
       global: true,
       includeNpxYes: true,
-      skills: selection.skills,
+      skills,
     });
 
     const isTty = process.stdout.isTTY;
@@ -640,11 +642,13 @@ async function stepIntegrations(
         const { checkbox: pickWorkflows } = await import('@inquirer/prompts');
         const chosen = await pickWorkflows<string>({
           message: 'Which workflow skills?',
-          choices: WORKFLOW_SKILLS.map((name) => ({
-            name,
-            value: name,
-            checked: true,
-          })),
+          choices: (await resolveSkillSelection(WORKFLOW_SKILL_SELECTION))!.map(
+            (name) => ({
+              name,
+              value: name,
+              checked: true,
+            })
+          ),
         });
         if (chosen.length === 0) {
           console.log(`  ${dim}No workflow skills selected.${reset}`);
@@ -653,7 +657,7 @@ async function stepIntegrations(
         console.log(`\n  Installing workflow skills...`);
         try {
           const count = await installRepoAcrossAgents(
-            { ...WORKFLOW_SKILL_SELECTION, skills: chosen },
+            { ...WORKFLOW_SKILL_SELECTION, family: undefined, skills: chosen },
             options,
             targetAgents
           );

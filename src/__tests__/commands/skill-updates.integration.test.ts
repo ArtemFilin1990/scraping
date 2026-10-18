@@ -1,0 +1,334 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as childProcess from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { createServer, type Server } from 'http';
+import { installSkillsNative } from '../../commands/skills-native';
+import { handleSetupCommand } from '../../commands/setup';
+import { maybeShowSkillUpdateNotice } from '../../utils/skill-update-notice';
+import { CATALOG_TREE_URL } from '../../utils/skill-catalog';
+
+vi.mock('child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('child_process')>()),
+  execSync: vi.fn(),
+}));
+
+describe('skill update lifecycle', () => {
+  let root: string;
+  let home: string;
+  let repo: string;
+  let server: Server;
+  let url: string;
+  let response: unknown;
+  let status: number;
+  let requests: number;
+  let stalled: boolean;
+  let stderr = { isTTY: true, write: vi.fn(() => true) };
+  const now = new Date('2026-01-01T00:00:00Z');
+  const originalFetch = globalThis.fetch;
+
+  function git(...args: string[]): string {
+    return childProcess.execFileSync('git', args, {
+      cwd: repo,
+      encoding: 'utf8',
+    });
+  }
+
+  function write(relative: string, content: string): void {
+    const file = path.join(repo, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  }
+
+  function skill(family: string, name: string): void {
+    write(
+      `skills/${family}/${name}/SKILL.md`,
+      `---\nname: ${name}\ndescription: Fixture workflow\n---\nRun the workflow.\n`
+    );
+  }
+
+  function publish(): void {
+    git('add', '.');
+    git(
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.com',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-qm',
+      'Update fixture'
+    );
+    response = {
+      truncated: false,
+      tree: git('ls-tree', '-rz', 'HEAD')
+        .split('\0')
+        .filter(Boolean)
+        .map((line) => {
+          const [header, file] = line.split('\t');
+          const [mode, type, sha] = header.split(' ');
+          return { mode, type, sha, path: file };
+        }),
+    };
+  }
+
+  async function install(): Promise<void> {
+    await installSkillsNative('firecrawl/skills', {
+      family: 'workflows',
+      // Represents a CLI whose built-in list predates later catalog additions.
+      skills: ['firecrawl-workflows'],
+      agent: 'claude-code',
+      quiet: true,
+    });
+  }
+
+  beforeEach(async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'firecrawl-skill-updates-'));
+    home = path.join(root, 'home');
+    repo = path.join(root, 'catalog');
+    fs.mkdirSync(repo, { recursive: true });
+    fs.mkdirSync(home, { recursive: true });
+    git('init', '-q');
+    skill('core', 'firecrawl');
+    skill('workflows', 'firecrawl-workflows');
+    skill('workflows', 'firecrawl-lead-research');
+    write(
+      'skills/workflows/firecrawl-lead-research/references/brief.md',
+      'Original reference\n'
+    );
+    publish();
+    status = 200;
+    requests = 0;
+    stalled = false;
+    server = createServer((_req, res) => {
+      requests++;
+      if (stalled) return;
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    const address = server.address();
+    if (!address || typeof address === 'string')
+      throw new Error('No fixture port');
+    url = `http://127.0.0.1:${address.port}`;
+    vi.spyOn(os, 'homedir').mockReturnValue(home);
+    vi.mocked(childProcess.execSync).mockImplementation((command) => {
+      const clone = command.match(
+        /^git clone --depth 1 "https:\/\/github.com\/firecrawl\/skills.git" "(.+)"$/
+      );
+      if (clone) {
+        return childProcess.execFileSync(
+          'git',
+          ['clone', '--quiet', repo, clone[1]],
+          { stdio: 'pipe' }
+        );
+      }
+      if (command === 'git --version')
+        return childProcess.execFileSync('git', ['--version']);
+      throw new Error(`Unexpected fixture command: ${command}`);
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        expect(input).toBe(CATALOG_TREE_URL);
+        return originalFetch(url, init);
+      })
+    );
+    vi.stubEnv('FIRECRAWL_NO_UPDATE_CHECK', '');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    stderr = { isTTY: true, write: vi.fn(() => true) };
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+      server.closeAllConnections();
+    });
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('detects reference edits and new workflows, throttles notices, then clears after explicit refresh', async () => {
+    await install();
+    const installed = path.join(home, '.agents/skills');
+    expect(fs.existsSync(path.join(installed, 'firecrawl'))).toBe(false);
+    const reference = path.join(
+      installed,
+      'firecrawl-lead-research/references/brief.md'
+    );
+    const lockPath = path.join(home, '.agents/.skill-lock.json');
+    const lockBefore = fs.readFileSync(lockPath, 'utf8');
+    write(
+      'skills/workflows/firecrawl-lead-research/references/brief.md',
+      'Updated reference\n'
+    );
+    skill('workflows', 'firecrawl-new-workflow');
+    publish();
+
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('workflows: 1 changed, 1 available to add')
+    );
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('firecrawl setup workflows')
+    );
+    expect(fs.readFileSync(reference, 'utf8')).toBe('Original reference\n');
+    expect(fs.readFileSync(lockPath, 'utf8')).toBe(lockBefore);
+    expect(requests).toBe(1);
+
+    stderr.write.mockClear();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).not.toHaveBeenCalled();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 13 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).toHaveBeenCalledOnce();
+    expect(requests).toBe(1);
+
+    await handleSetupCommand('workflows', {
+      nativeSkills: true,
+      agent: 'claude-code',
+      quiet: true,
+      skipAuthOffer: true,
+    });
+    expect(fs.readFileSync(reference, 'utf8')).toBe('Updated reference\n');
+    expect(
+      fs.existsSync(path.join(installed, 'firecrawl-new-workflow/SKILL.md'))
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(home, '.claude/skills/firecrawl-new-workflow/SKILL.md')
+      )
+    ).toBe(true);
+    expect(fs.existsSync(path.join(installed, 'firecrawl'))).toBe(false);
+    stderr.write.mockClear();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 14 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).not.toHaveBeenCalled();
+    expect(requests).toBe(2);
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 21 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(requests).toBe(2);
+    expect(stderr.write).not.toHaveBeenCalled();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 35 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(requests).toBe(3);
+  });
+
+  it('stays quiet and avoids network access for non-interactive, opted-out and fresh installations', async () => {
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(requests).toBe(0);
+    await install();
+    stderr.isTTY = false;
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    stderr.isTTY = true;
+    vi.stubEnv('FIRECRAWL_NO_UPDATE_CHECK', '1');
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(requests).toBe(0);
+    expect(stderr.write).not.toHaveBeenCalled();
+  });
+
+  it('treats CRLF checkouts as current and invalidates a cached catalog after refresh', async () => {
+    await install();
+    const file = path.join(
+      home,
+      '.agents/skills/firecrawl-lead-research/SKILL.md'
+    );
+    fs.writeFileSync(
+      file,
+      fs.readFileSync(file, 'utf8').replace(/\n/g, '\r\n')
+    );
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(stderr.write).not.toHaveBeenCalled();
+    write(
+      'skills/workflows/firecrawl-lead-research/references/brief.md',
+      'Newer than cached catalog\n'
+    );
+    publish();
+    await install();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 1000),
+      stderr,
+    });
+    expect(requests).toBe(2);
+    expect(stderr.write).not.toHaveBeenCalled();
+  });
+
+  it('handles failed catalog requests silently and backs off before retrying', async () => {
+    await install();
+    status = 429;
+    await expect(
+      maybeShowSkillUpdateNotice({ now, stderr })
+    ).resolves.toBeUndefined();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 1000),
+      stderr,
+    });
+    expect(requests).toBe(1);
+    status = 200;
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 61 * 60 * 1000),
+      stderr,
+    });
+    expect(requests).toBe(2);
+    expect(stderr.write).not.toHaveBeenCalled();
+  });
+
+  it('abandons a stalled catalog request without blocking the command', async () => {
+    await install();
+    stalled = true;
+    const started = performance.now();
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(requests).toBe(1);
+    expect(stderr.write).not.toHaveBeenCalled();
+  });
+
+  it('does not offer a whole family for individually installed skills or inspect other publishers', async () => {
+    await installSkillsNative('firecrawl/skills', {
+      skills: ['firecrawl-lead-research'],
+      agent: 'claude-code',
+      quiet: true,
+    });
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(stderr.write).not.toHaveBeenCalled();
+    const lockPath = path.join(home, '.agents/.skill-lock.json');
+    const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    lock.skills['firecrawl-lead-research'].source = 'example/skills';
+    fs.writeFileSync(lockPath, JSON.stringify(lock));
+    requests = 0;
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 21 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(requests).toBe(0);
+  });
+
+  it('ignores truncated responses and malformed local state without failing commands', async () => {
+    await install();
+    response = { ...(response as object), truncated: true };
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(stderr.write).not.toHaveBeenCalled();
+    fs.writeFileSync(path.join(home, '.agents/.skill-lock.json'), '{broken');
+    await expect(
+      maybeShowSkillUpdateNotice({ now, stderr })
+    ).resolves.toBeUndefined();
+    expect(requests).toBe(1);
+  });
+});

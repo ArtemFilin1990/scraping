@@ -95,6 +95,27 @@ firecrawl setup build
 firecrawl setup workflows
 ```
 
+### Skill updates
+
+Interactive CLI sessions show a notice when installed Firecrawl skills differ
+from the current catalog. The check includes supporting reference files and runs
+independently of CLI releases. If a family's umbrella skill is installed, the
+notice also offers other skills available in that family.
+
+Run the suggested `firecrawl setup core`, `firecrawl setup build`, or
+`firecrawl setup workflows` command to refresh the entire family. These commands
+discover the current catalog contents, including new skills added since your CLI
+was released. An explicit refresh replaces installed files, including local edits;
+the notice itself never changes them.
+
+Checks cover global installations recorded in `~/.agents/.skill-lock.json` with
+files in `~/.agents/skills`. They cache catalog results for 20 hours, repeat the
+same notice at most once every 12 hours, and retry failed checks after an hour.
+Non-interactive runs stay quiet. Set `FIRECRAWL_NO_UPDATE_CHECK=1` to disable both
+CLI and skill update notices.
+
+### MCP and web defaults
+
 To install the Firecrawl MCP server into your editors (Cursor, Claude Code, VS Code, etc.):
 
 ```bash

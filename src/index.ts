@@ -77,6 +77,7 @@ import { parseMaxPages, parseScrapeOptions } from './utils/options';
 import { isJobId } from './utils/job';
 import { ensureAuthenticated, printBanner } from './utils/auth';
 import { maybeShowUpdateNotice } from './utils/update-notice';
+import { maybeShowSkillUpdateNotice } from './utils/skill-update-notice';
 import packageJson from '../package.json';
 import type { SearchSource, SearchCategory } from './types/search';
 import type { ScrapeFormat } from './types/scrape';
@@ -2731,6 +2732,9 @@ async function main() {
   }
 
   await maybeShowUpdateNotice();
+  if (!args.includes('init') && !args.includes('setup')) {
+    await maybeShowSkillUpdateNotice();
+  }
 
   // If no arguments or just help flags, check auth and show appropriate message
   if (args.length === 0) {

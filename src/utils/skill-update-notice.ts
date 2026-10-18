@@ -1,0 +1,216 @@
+import { createHash } from 'crypto';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import {
+  fetchCatalogTree,
+  isSkillFile,
+  parseCatalogTree,
+  type CatalogSkill,
+  type SkillFamily,
+} from './skill-catalog';
+
+const CHECK_TTL_MS = 20 * 60 * 60 * 1000;
+const NOTICE_TTL_MS = 12 * 60 * 60 * 1000;
+const RETRY_TTL_MS = 60 * 60 * 1000;
+const SOURCES = new Set([
+  'firecrawl/skills',
+  'firecrawl/cli',
+  'firecrawl/firecrawl-workflows',
+  'firecrawl/firecrawl',
+]);
+const FAMILY_ENTRY: Record<SkillFamily, string> = {
+  core: 'firecrawl',
+  build: 'firecrawl-build',
+  workflows: 'firecrawl-workflows',
+};
+
+interface NoticeCache {
+  installation?: string;
+  checkedAt?: number;
+  retryAt?: number;
+  tree?: unknown;
+  lastShown?: string;
+  lastShownAt?: number;
+}
+
+export interface SkillUpdateNoticeOptions {
+  home?: string;
+  now?: Date;
+  stderr?: Pick<NodeJS.WriteStream, 'write' | 'isTTY'>;
+}
+
+async function readJson(file: string): Promise<unknown> {
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+type InstalledFiles = Record<string, string[]>;
+
+function blobHash(content: Buffer): string {
+  return createHash('sha1')
+    .update(`blob ${content.length}\0`)
+    .update(content)
+    .digest('hex');
+}
+
+/** Hash local files using Git's blob format so both installer paths are supported. */
+async function installedFiles(directory: string): Promise<InstalledFiles> {
+  const files: InstalledFiles = {};
+  async function walk(relative: string): Promise<void> {
+    for (const entry of await fs.readdir(path.join(directory, relative), {
+      withFileTypes: true,
+    })) {
+      const file = relative ? `${relative}/${entry.name}` : entry.name;
+      if (!isSkillFile(file)) continue;
+      if (entry.isDirectory()) {
+        await walk(file);
+      } else if (entry.isFile()) {
+        const content = await fs.readFile(path.join(directory, file));
+        files[file] = [blobHash(content)];
+        // Git can check text out with CRLF on Windows without changing its contents.
+        if (!content.includes(0) && content.includes('\r\n')) {
+          files[file].push(
+            blobHash(
+              Buffer.from(content.toString('utf8').replace(/\r\n/g, '\n'))
+            )
+          );
+        }
+      } else {
+        throw new Error('Unsupported local skill file.');
+      }
+    }
+  }
+  await walk('');
+  return files;
+}
+
+function sameFiles(
+  local: InstalledFiles,
+  remote: Record<string, string>
+): boolean {
+  return (
+    Object.keys(local).length === Object.keys(remote).length &&
+    Object.entries(remote).every(([file, hash]) => local[file]?.includes(hash))
+  );
+}
+
+/** Read-only, best-effort notice. It never installs or modifies skill contents. */
+export async function maybeShowSkillUpdateNotice(
+  options: SkillUpdateNoticeOptions = {}
+): Promise<void> {
+  const stderr = options.stderr ?? process.stderr;
+  if (
+    !stderr.isTTY ||
+    ['1', 'true'].includes(process.env.FIRECRAWL_NO_UPDATE_CHECK ?? '')
+  )
+    return;
+
+  try {
+    const home = options.home ?? os.homedir();
+    const lock = (await readJson(
+      path.join(home, '.agents', '.skill-lock.json')
+    )) as { skills?: Record<string, { source?: string }> } | undefined;
+    if (!lock?.skills || typeof lock.skills !== 'object') return;
+    const installed = new Map<string, InstalledFiles>();
+    for (const [name, entry] of Object.entries(lock.skills)) {
+      if (
+        !/^firecrawl(?:-[a-z0-9]+)*$/.test(name) ||
+        !entry ||
+        !SOURCES.has(entry.source ?? '')
+      )
+        continue;
+      try {
+        const files = await installedFiles(
+          path.join(home, '.agents', 'skills', name)
+        );
+        if (Object.hasOwn(files, 'SKILL.md')) installed.set(name, files);
+      } catch {
+        // Removed or unreadable installations do not need a notice.
+      }
+    }
+    if (!installed.size) return;
+
+    const now = (options.now ?? new Date()).getTime();
+    const cachePath = path.join(home, '.firecrawl', 'skill-update-check.json');
+    const value = await readJson(cachePath);
+    const cache: NoticeCache = value && typeof value === 'object' ? value : {};
+    const installation = createHash('sha256')
+      .update(
+        JSON.stringify(
+          [...installed.keys()].sort().map((name) => [name, lock.skills![name]])
+        )
+      )
+      .digest('hex');
+    if (cache.installation !== installation) {
+      // A refresh may have installed content newer than our cached catalog.
+      delete cache.tree;
+      delete cache.checkedAt;
+      delete cache.retryAt;
+      cache.installation = installation;
+    }
+    let catalog: CatalogSkill[] | undefined;
+    try {
+      catalog = parseCatalogTree(cache.tree);
+    } catch {
+      cache.checkedAt = undefined;
+    }
+    if (
+      (!cache.checkedAt || now - cache.checkedAt > CHECK_TTL_MS) &&
+      (!cache.retryAt || now >= cache.retryAt)
+    ) {
+      try {
+        const tree = await fetchCatalogTree(750);
+        catalog = parseCatalogTree(tree);
+        cache.tree = tree;
+        cache.checkedAt = now;
+        delete cache.retryAt;
+      } catch {
+        cache.retryAt = now + RETRY_TTL_MS;
+      }
+    }
+
+    const changes = (catalog ?? []).filter((skill) => {
+      const local = installed.get(skill.name);
+      // Offer additional skills only for families with their umbrella installed.
+      return local
+        ? !sameFiles(local, skill.files)
+        : installed.has(FAMILY_ENTRY[skill.family]);
+    });
+    const signature = createHash('sha256')
+      .update(JSON.stringify(changes))
+      .digest('hex');
+    if (
+      changes.length &&
+      (cache.lastShown !== signature ||
+        !cache.lastShownAt ||
+        now - cache.lastShownAt > NOTICE_TTL_MS)
+    ) {
+      const lines = ['Firecrawl skill updates available:'];
+      for (const family of ['core', 'build', 'workflows'] as const) {
+        const group = changes.filter((skill) => skill.family === family);
+        if (!group.length) continue;
+        const updated = group.filter((skill) =>
+          installed.has(skill.name)
+        ).length;
+        lines.push(
+          `  ${family}: ${updated} changed, ${group.length - updated} available to add`
+        );
+        lines.push(`  Run firecrawl setup ${family} to refresh.`);
+      }
+      stderr.write(`${lines.join('\n')}\n\n`);
+      cache.lastShown = signature;
+      cache.lastShownAt = now;
+    } else if (!changes.length) {
+      delete cache.lastShown;
+      delete cache.lastShownAt;
+    }
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+    await fs.writeFile(cachePath, JSON.stringify(cache) + '\n');
+  } catch {
+    // Offline checks, invalid state and cache permissions never fail a command.
+  }
+}

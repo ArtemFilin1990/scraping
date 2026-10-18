@@ -7,6 +7,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import type { SkillFamily } from '../utils/skill-catalog';
 
 const green = '\x1b[32m';
 const dim = '\x1b[2m';
@@ -25,6 +26,8 @@ interface AgentConfig {
 }
 
 export interface NativeSkillsInstallOptions {
+  /** Select a whole catalog family directly from the downloaded repository. */
+  family?: SkillFamily;
   /** Link skills only into this agent's global skills directory. */
   agent?: string;
   /** Suppress per-repo status lines; caller will render its own summary. */
@@ -414,11 +417,16 @@ export async function installSkillsNative(
     }
 
     let skills = discoverSkills(skillsDir);
+    if (options.family) {
+      skills = skills.filter(
+        (skill) => skill.skillPath.split(path.sep)[0] === options.family
+      );
+    }
     if (skills.length === 0) {
       throw new Error('No skills found in repository');
     }
 
-    if (options.skills) {
+    if (options.skills && !options.family) {
       const wanted = new Set(options.skills);
       skills = skills.filter((skill) => wanted.has(skill.name));
       const missing = options.skills.filter(

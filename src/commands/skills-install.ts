@@ -13,6 +13,8 @@
  * `firecrawl setup build` installs build skills, and
  * `firecrawl setup workflows` installs workflow skills.
  */
+import { getCatalogSkills, type SkillFamily } from '../utils/skill-catalog';
+
 export const SKILL_REPOS = ['firecrawl/cli', 'firecrawl/skills'] as const;
 
 export const WORKFLOW_SKILL_REPOS = ['firecrawl/firecrawl-workflows'] as const;
@@ -85,34 +87,53 @@ export const WORKFLOW_SKILLS = [
 ] as const;
 
 /**
- * A named subset of catalog skills to install. Shared by `init` and
- * `setup skills`/`setup workflows` so a retry hint always reinstalls exactly
- * the same set. Selection is name-based and independent of catalog layout.
+ * A family or named subset of catalog skills to install. Family installs
+ * discover current members; explicit names preserve a user's selection.
  */
 export interface SkillSelection {
   repo: string;
-  /** Install only these skills (by name); omit for the whole repo. */
+  /** Discover the whole family at install time, including newly published skills. */
+  family?: SkillFamily;
+  /** Explicit names when family is absent; otherwise the release's known names. */
   skills?: readonly string[];
   label: string;
 }
 
 export const CLI_SKILL_SELECTION: SkillSelection = {
   repo: CATALOG_REPO,
+  family: 'core',
   skills: CLI_SKILLS,
   label: 'core firecrawl skills',
 };
 
 export const BUILD_SKILL_SELECTION: SkillSelection = {
   repo: CATALOG_REPO,
+  family: 'build',
   skills: BUILD_SKILLS,
   label: 'firecrawl build skills',
 };
 
 export const WORKFLOW_SKILL_SELECTION: SkillSelection = {
   repo: CATALOG_REPO,
+  family: 'workflows',
   skills: WORKFLOW_SKILLS,
   label: 'firecrawl workflow skills',
 };
+
+/** Resolve names for installers that accept a skill list rather than a family. */
+export async function resolveSkillSelection(
+  selection: SkillSelection
+): Promise<readonly string[] | undefined> {
+  if (!selection.family) return selection.skills;
+  const names = (await getCatalogSkills())
+    .filter((skill) => skill.family === selection.family)
+    .map((skill) => skill.name);
+  if (!names.length)
+    throw new Error(
+      `No ${selection.family} skills found in the catalog. Retry setup later.`
+    );
+  return names;
+}
 
 export interface SkillsInstallCommandOptions {
   agent?: string;

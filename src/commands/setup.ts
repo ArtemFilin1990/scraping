@@ -24,6 +24,7 @@ import {
   BUILD_SKILLS,
   CATALOG_REPO,
   cleanNpmEnv,
+  resolveSkillSelection,
   CLI_SKILL_SELECTION,
   CLI_SKILLS,
   SKILL_REPOS,
@@ -587,6 +588,7 @@ async function installSkills(
     if (options.nativeSkills) {
       try {
         const result = await installSkillsNative(repo, {
+          family: selection.family,
           agent: options.agent,
           quiet: options.quiet,
           skills: selection.skills,
@@ -607,13 +609,14 @@ async function installSkills(
     }
 
     if (hasNpx()) {
+      const skills = await resolveSkillSelection(selection);
       const args = buildSkillsInstallArgs({
         repo,
         agent: options.agent,
         global: true,
         yes: options.yes,
         includeNpxYes: true,
-        skills: selection.skills,
+        skills,
       });
 
       console.log(`Running: ${args.join(' ')}\n`);
@@ -632,6 +635,7 @@ async function installSkills(
     // Fallback: native install (no npx/Node required)
     try {
       await installSkillsNative(repo, {
+        family: selection.family,
         agent: options.agent,
         skills: selection.skills,
       });

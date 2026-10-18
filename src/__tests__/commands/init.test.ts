@@ -3,9 +3,21 @@ import { execSync } from 'child_process';
 import * as skillsNative from '../../commands/skills-native';
 import { handleInitCommand } from '../../commands/init';
 import { CLI_SKILLS, WORKFLOW_SKILLS } from '../../commands/skills-install';
+import { getCatalogSkills } from '../../utils/skill-catalog';
 
 const cliSkillFlags = `--skill ${CLI_SKILLS.join(' ')}`;
 const workflowSkillFlags = `--skill ${WORKFLOW_SKILLS.join(' ')}`;
+
+vi.mock('../../utils/skill-catalog', () => ({
+  getCatalogSkills: vi.fn(async () => [
+    ...CLI_SKILLS.map((name) => ({ name, family: 'core', files: {} })),
+    ...WORKFLOW_SKILLS.map((name) => ({
+      name,
+      family: 'workflows',
+      files: {},
+    })),
+  ]),
+}));
 
 const { installMcpMock, getApiKeyMock, confirmMock, checkboxMock } = vi.hoisted(
   () => ({
@@ -94,6 +106,21 @@ describe('handleInitCommand', () => {
     );
     expect(execSync).toHaveBeenCalledWith(
       `npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor ${workflowSkillFlags}`,
+      expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
+    );
+  });
+
+  it('installs newly published workflows during non-interactive init', async () => {
+    vi.mocked(getCatalogSkills)
+      .mockResolvedValueOnce(
+        CLI_SKILLS.map((name) => ({ name, family: 'core', files: {} }))
+      )
+      .mockResolvedValueOnce([
+        { name: 'firecrawl-new-workflow', family: 'workflows', files: {} },
+      ]);
+    await handleInitCommand({ yes: true, skipInstall: true, skipAuth: true });
+    expect(execSync).toHaveBeenCalledWith(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-new-workflow',
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
   });
