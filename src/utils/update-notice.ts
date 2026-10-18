@@ -86,7 +86,7 @@ async function writeCachedLatest(
 export function formatUpdateNotice(latestVersion: string): string {
   const currentVersion = packageJson.version;
   const lines = [
-    `✨ Update available! ${currentVersion} -> ${latestVersion}`,
+    `Update available! ${currentVersion} -> ${latestVersion}`,
     `Run ${INSTALL_COMMAND} to update.`,
     '',
     'See full release notes:',
