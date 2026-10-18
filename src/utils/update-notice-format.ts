@@ -1,9 +1,13 @@
+import stringWidth from 'string-width';
+
 /** Shared presentation for CLI and skill update notices. */
 export function formatUpdateBox(lines: readonly string[]): string {
-  const width = Math.max(...lines.map((line) => line.length));
+  const width = Math.max(0, ...lines.map((line) => stringWidth(line)));
   const top = `╭${'─'.repeat(width + 2)}╮`;
   const bottom = `╰${'─'.repeat(width + 2)}╯`;
-  const body = lines.map((line) => `│ ${line.padEnd(width)} │`);
+  const body = lines.map(
+    (line) => `│ ${line}${' '.repeat(width - stringWidth(line))} │`
+  );
   return [top, ...body, bottom].join('\n');
 }
 
