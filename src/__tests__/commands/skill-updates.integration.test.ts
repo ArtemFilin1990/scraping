@@ -666,6 +666,36 @@ describe('skill update lifecycle', () => {
     expect(notice).toContain('Run firecrawl setup workflows');
   });
 
+  it('keeps existing siblings quiet after a fresh npx umbrella install without warming the cache', async () => {
+    expect(fs.existsSync(path.join(home, '.firecrawl'))).toBe(false);
+    expect(requests).toBe(0);
+    mockNpxInstall(['firecrawl-workflows']);
+    await handleSetupCommand('firecrawl-workflows', { skipAuthOffer: true });
+    expect(
+      fs.existsSync(path.join(home, '.agents/skills/firecrawl-lead-research'))
+    ).toBe(false);
+    const cache = JSON.parse(
+      fs.readFileSync(
+        path.join(home, '.firecrawl/skill-update-check.json'),
+        'utf8'
+      )
+    );
+    expect(cache.baseline).toContain('firecrawl-lead-research');
+    expect(cache.baseline).not.toContain('firecrawl');
+    expect(cache.tree).toBeUndefined();
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(stderr.write).not.toHaveBeenCalled();
+    skill('workflows', 'firecrawl-new-workflow');
+    publish();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 21 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('firecrawl setup workflows')
+    );
+  });
+
   it('keeps previously seen workflows quiet after an umbrella-only install but announces later additions', async () => {
     await installSkillsNative('firecrawl/skills', {
       family: 'core',
