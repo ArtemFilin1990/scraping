@@ -384,24 +384,32 @@ describe('skill update lifecycle', () => {
     }
   );
 
-  it('repairs array-shaped caches and then respects the notice cooldown', async () => {
-    await install();
-    write(
-      'skills/workflows/firecrawl-lead-research/references/brief.md',
-      'Changed reference\n'
-    );
-    publish();
-    const cachePath = path.join(home, '.firecrawl/skill-update-check.json');
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, '[]');
-    await maybeShowSkillUpdateNotice({ now, stderr });
-    await maybeShowSkillUpdateNotice({ now, stderr });
-    expect(requests).toBe(1);
-    expect(stderr.write).toHaveBeenCalledOnce();
-    expect(Array.isArray(JSON.parse(fs.readFileSync(cachePath, 'utf8')))).toBe(
-      false
-    );
-  });
+  it.each(['[]', '{"baseline":["invalid"]}'])(
+    'repairs malformed cache %s and respects the notice cooldown',
+    async (invalidCache) => {
+      await install();
+      write(
+        'skills/workflows/firecrawl-lead-research/references/brief.md',
+        'Changed reference\n'
+      );
+      publish();
+      const cachePath = path.join(home, '.firecrawl/skill-update-check.json');
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      skill('workflows', 'firecrawl-shop');
+      publish();
+      fs.writeFileSync(cachePath, invalidCache);
+      await maybeShowSkillUpdateNotice({ now, stderr });
+      await maybeShowSkillUpdateNotice({ now, stderr });
+      expect(requests).toBe(1);
+      expect(stderr.write).toHaveBeenCalledOnce();
+      expect(stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('1 changed, 0 available to add')
+      );
+      expect(
+        Array.isArray(JSON.parse(fs.readFileSync(cachePath, 'utf8')))
+      ).toBe(false);
+    }
+  );
 
   it('serializes concurrent notice checks and recovers an abandoned lock', async () => {
     await install();

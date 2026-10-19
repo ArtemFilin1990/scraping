@@ -169,7 +169,10 @@ export async function maybeShowSkillUpdateNotice(
       if (
         Array.isArray(cache.baseline) &&
         cache.baseline.length > 0 &&
-        cache.baseline.every((name) => typeof name === 'string')
+        cache.baseline.every(
+          (name) =>
+            typeof name === 'string' && /^firecrawl(?:-[a-z0-9]+)*$/.test(name)
+        )
       ) {
         previousNames = new Set(cache.baseline);
       }
