@@ -165,7 +165,13 @@ export function buildSkillsInstallArgs(
     args.push('-y');
   }
 
-  args.push('skills', 'add', options.repo ?? 'firecrawl/cli', '--full-depth');
+  // Keep the installer aligned with the registry in skill-install-agents.ts.
+  args.push(
+    'skills@1.7.2',
+    'add',
+    options.repo ?? 'firecrawl/cli',
+    '--full-depth'
+  );
 
   if (options.global ?? true) {
     args.push('--global');

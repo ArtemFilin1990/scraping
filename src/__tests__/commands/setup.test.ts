@@ -118,7 +118,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('skills', {});
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${cliSkillFlags}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${cliSkillFlags}`
     );
   });
 
@@ -136,7 +136,7 @@ describe('handleSetupCommand', () => {
       await handleSetupCommand('workflows', {});
 
       expectSkillsInstall(
-        `npx -y skills add firecrawl/skills --full-depth --global --yes --agent ${targets} ${workflowSkillFlags}`
+        `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent ${targets} ${workflowSkillFlags}`
       );
     }
   );
@@ -147,7 +147,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('core', { agent: 'cursor' });
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor ${cliSkillFlags}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent cursor ${cliSkillFlags}`
     );
     expect(detectGlobalSkillAgents).not.toHaveBeenCalled();
   });
@@ -226,7 +226,7 @@ describe('handleSetupCommand', () => {
     ]);
     await handleSetupCommand('workflows', { agent: 'cursor' });
     expectSkillsInstall(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor --skill firecrawl-new-workflow'
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent cursor --skill firecrawl-new-workflow'
     );
   });
 
@@ -237,7 +237,7 @@ describe('handleSetupCommand', () => {
       vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error(message));
       await handleSetupCommand('workflows', {});
       expectSkillsInstall(
-        `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${workflowSkillFlags}`
+        `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${workflowSkillFlags}`
       );
       expect(console.error).toHaveBeenCalledWith(
         expect.stringContaining("using this CLI release's skill list")
@@ -251,7 +251,7 @@ describe('handleSetupCommand', () => {
     ]);
     await handleSetupCommand('firecrawl-new-workflow', {});
     expectSkillsInstall(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-new-workflow'
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-new-workflow'
     );
   });
 
@@ -272,7 +272,7 @@ describe('handleSetupCommand', () => {
     vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error('offline'));
     await handleSetupCommand('firecrawl-new-workflow', {});
     expectSkillsInstall(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-new-workflow'
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-new-workflow'
     );
   });
 
@@ -291,7 +291,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('skills', { agent: 'cursor' });
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor ${cliSkillFlags}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent cursor ${cliSkillFlags}`
     );
   });
 
@@ -299,7 +299,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('core', {});
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${cliSkillFlags}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${cliSkillFlags}`
     );
   });
 
@@ -307,7 +307,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('build', {});
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${buildSkillFlags}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${buildSkillFlags}`
     );
   });
 
@@ -346,7 +346,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('firecrawl-developer-index', {});
 
     expectSkillsInstall(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-developer-index'
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-developer-index'
     );
   });
 
@@ -354,7 +354,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('developer-index', {});
 
     expectSkillsInstall(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-developer-index'
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-developer-index'
     );
   });
 
@@ -362,14 +362,14 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('build', {});
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${buildSkillFlags}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${buildSkillFlags}`
     );
 
     vi.mocked(execFileSync).mockClear();
     await handleSetupCommand('firecrawl-build', {});
 
     expectSkillsInstall(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-build'
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-build'
     );
   });
 
@@ -377,7 +377,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand('workflows', {});
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${workflowSkillFlags}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${workflowSkillFlags}`
     );
   });
 
@@ -391,7 +391,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand(name, { agent: 'codex', yes: true });
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-${name}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-${name}`
     );
   });
 
@@ -403,13 +403,13 @@ describe('handleSetupCommand', () => {
     );
 
     expectSkillsInstall(
-      'npx -y skills add firecrawl/cli --full-depth --global --yes --agent codex'
+      'npx -y skills@1.7.2 add firecrawl/cli --full-depth --global --yes --agent codex'
     );
     expectSkillsInstall(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex'
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex'
     );
     expectSkillsInstall(
-      'npx -y skills add firecrawl/firecrawl-workflows --full-depth --global --yes --agent codex'
+      'npx -y skills@1.7.2 add firecrawl/firecrawl-workflows --full-depth --global --yes --agent codex'
     );
   });
 
@@ -428,7 +428,7 @@ describe('handleSetupCommand', () => {
     await handleSetupCommand(undefined, { yes: true });
 
     expectSkillsInstall(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${cliSkillFlags}`
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${cliSkillFlags}`
     );
     expect(execFileSync).toHaveBeenCalledWith(
       'npx',
@@ -988,7 +988,7 @@ describe('handleSetupCommand', () => {
       .mocked(execFileSync)
       .mock.calls.find(
         ([command, args]) =>
-          command === 'npx' && !(args as string[]).includes('skills')
+          command === 'npx' && !(args as string[]).includes('skills@1.7.2')
       );
     expect(mcpCall).toBeDefined();
     expect(mcpCall?.[1]).not.toContain('--global');
@@ -1164,7 +1164,7 @@ describe('handleSetupCommand', () => {
         }
       ).mock.calls;
       const installCalls = allCalls
-        .filter(([, args]) => args.join(' ').includes('skills add'))
+        .filter(([, args]) => args.join(' ').includes('skills@1.7.2 add'))
         .map(([, , opts]) => [undefined, opts] as const);
       expect(installCalls.length).toBe(1);
       for (const [, opts] of installCalls) {
