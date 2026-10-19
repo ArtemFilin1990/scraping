@@ -53,6 +53,32 @@ async function readJson(file: string): Promise<unknown> {
   }
 }
 
+/** Read native and npx installation state; npx can keep its lock under XDG state. */
+async function readInstalledSkills(
+  home: string
+): Promise<Record<string, { source?: string } | null>> {
+  const paths = [path.join(home, '.agents', '.skill-lock.json')];
+  if (process.env.XDG_STATE_HOME) {
+    paths.push(
+      path.join(process.env.XDG_STATE_HOME, 'skills', '.skill-lock.json')
+    );
+  }
+  const skills: Record<string, { source?: string } | null> = {};
+  for (const file of paths) {
+    const lock = (await readJson(file)) as
+      | { skills?: typeof skills }
+      | undefined;
+    if (
+      lock?.skills &&
+      typeof lock.skills === 'object' &&
+      !Array.isArray(lock.skills)
+    ) {
+      Object.assign(skills, lock.skills);
+    }
+  }
+  return skills;
+}
+
 function cachePathFor(home: string): string {
   return path.join(home, '.firecrawl', 'skill-update-check.json');
 }
@@ -149,11 +175,9 @@ export async function rememberSkillInstall(
   if (!SOURCES.has(repo)) return;
   if (names) return rememberCatalogNames(names);
   try {
-    const lock = (await readJson(
-      path.join(os.homedir(), '.agents', '.skill-lock.json')
-    )) as { skills?: Record<string, { source?: string } | null> } | undefined;
+    const skills = await readInstalledSkills(os.homedir());
     await rememberCatalogNames(
-      Object.entries(lock?.skills ?? {})
+      Object.entries(skills)
         .filter(([, entry]) => entry?.source === repo)
         .map(([name]) => name)
     );
@@ -226,12 +250,9 @@ export async function maybeShowSkillUpdateNotice(
   let releaseLock: (() => Promise<void>) | undefined;
   try {
     const home = options.home ?? os.homedir();
-    const lock = (await readJson(
-      path.join(home, '.agents', '.skill-lock.json')
-    )) as { skills?: Record<string, { source?: string }> } | undefined;
-    if (!lock?.skills || typeof lock.skills !== 'object') return;
+    const skills = await readInstalledSkills(home);
     const installed = new Map<string, InstalledFiles>();
-    for (const [name, entry] of Object.entries(lock.skills)) {
+    for (const [name, entry] of Object.entries(skills)) {
       if (!SKILL_NAME.test(name) || !entry || !SOURCES.has(entry.source ?? ''))
         continue;
       try {
@@ -271,7 +292,7 @@ export async function maybeShowSkillUpdateNotice(
     const installation = createHash('sha256')
       .update(
         JSON.stringify(
-          [...installed.keys()].sort().map((name) => [name, lock.skills![name]])
+          [...installed.keys()].sort().map((name) => [name, skills[name]])
         )
       )
       .digest('hex');
