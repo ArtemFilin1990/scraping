@@ -192,7 +192,7 @@ export async function maybeShowSkillUpdateNotice(
         now - cache.lastShownAt > NOTICE_TTL_MS)
     ) {
       const title = 'Skill updates available!';
-      const lines = [title];
+      const lines = [`✨ ${title}`];
       const commands: string[] = [];
       for (const family of ['core', 'build', 'workflows'] as const) {
         const group = changes.filter((skill) => skill.family === family);

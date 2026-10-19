@@ -191,7 +191,7 @@ describe('skill update lifecycle', () => {
     const notice = stripVTControlCharacters(coloredNotice);
     expect(notice.startsWith('╭')).toBe(true);
     expect(notice.trimEnd().endsWith('╯')).toBe(true);
-    expect(notice).toContain('Skill updates available!');
+    expect(notice).toContain('✨ Skill updates available!');
     expect(notice).toContain('Run firecrawl setup workflows to update.');
     expect(notice).toContain(
       'https://github.com/firecrawl/skills/commits/main/'

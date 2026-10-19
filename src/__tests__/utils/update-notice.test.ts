@@ -52,7 +52,7 @@ describe('update notice', () => {
     const notice = formatUpdateNotice('99.99.99');
 
     expect(notice).toContain(
-      `Update available! ${packageJson.version} -> 99.99.99`
+      `✨ Update available! ${packageJson.version} -> 99.99.99`
     );
     expect(notice).toContain('Run npm install -g firecrawl-cli to update.');
     expect(notice).toContain(
