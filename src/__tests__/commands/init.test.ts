@@ -1,3 +1,4 @@
+import { detectGlobalSkillAgents } from '../../utils/skill-install-agents';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'child_process';
 import * as skillsNative from '../../commands/skills-native';
@@ -32,6 +33,10 @@ vi.mock('child_process', () => ({
   execSync: vi.fn(),
 }));
 
+vi.mock('../../utils/skill-install-agents', () => ({
+  detectGlobalSkillAgents: vi.fn(() => []),
+}));
+
 vi.mock('../../commands/skills-native', () => ({
   detectInstalledAgentNames: vi.fn(() => []),
   hasNpx: vi.fn(() => true),
@@ -58,6 +63,8 @@ vi.mock('@inquirer/prompts', () => ({
 describe('handleInitCommand', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(detectGlobalSkillAgents).mockReturnValue([]);
+    vi.mocked(skillsNative.detectInstalledAgentNames).mockReturnValue([]);
     process.exitCode = 0;
     getApiKeyMock.mockReturnValue(undefined);
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -78,11 +85,11 @@ describe('handleInitCommand', () => {
     });
 
     expect(execSync).toHaveBeenCalledWith(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes ${cliSkillFlags}`,
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${cliSkillFlags}`,
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
     expect(execSync).toHaveBeenCalledWith(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes ${workflowSkillFlags}`,
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex ${workflowSkillFlags}`,
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
     // Build skills are intentionally no longer installed by init.
@@ -90,6 +97,27 @@ describe('handleInitCommand', () => {
       expect.stringContaining('firecrawl-build'),
       expect.anything()
     );
+  });
+
+  it('preserves detected targets when native installation falls back to npx', async () => {
+    vi.mocked(skillsNative.detectInstalledAgentNames).mockReturnValue([
+      'claude-code',
+      'cursor',
+    ]);
+
+    vi.mocked(detectGlobalSkillAgents).mockReturnValue([
+      'claude-code',
+      'cursor',
+    ]);
+
+    await handleInitCommand({ yes: true, skipInstall: true, skipAuth: true });
+
+    for (const flags of [cliSkillFlags, workflowSkillFlags]) {
+      expect(execSync).toHaveBeenCalledWith(
+        `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex claude-code cursor ${flags}`,
+        expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
+      );
+    }
   });
 
   it('scopes non-interactive skills install to one agent when provided', async () => {
@@ -101,11 +129,11 @@ describe('handleInitCommand', () => {
     });
 
     expect(execSync).toHaveBeenCalledWith(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor ${cliSkillFlags}`,
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent cursor ${cliSkillFlags}`,
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
     expect(execSync).toHaveBeenCalledWith(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor ${workflowSkillFlags}`,
+      `npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent cursor ${workflowSkillFlags}`,
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
   });
@@ -120,7 +148,7 @@ describe('handleInitCommand', () => {
       ]);
     await handleInitCommand({ yes: true, skipInstall: true, skipAuth: true });
     expect(execSync).toHaveBeenCalledWith(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-new-workflow',
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-new-workflow',
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
   });
@@ -162,7 +190,7 @@ describe('handleInitCommand', () => {
       })
     );
     expect(execSync).toHaveBeenCalledWith(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-lead-gen firecrawl-lead-research',
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-lead-gen firecrawl-lead-research',
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
     expect(execSync).toHaveBeenCalledTimes(1);
@@ -189,7 +217,7 @@ describe('handleInitCommand', () => {
       })
     );
     expect(execSync).toHaveBeenCalledWith(
-      'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-lead-research',
+      'npx -y skills@1.7.2 add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-lead-research',
       expect.anything()
     );
     expect(console.log).toHaveBeenCalledWith(
