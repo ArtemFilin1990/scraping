@@ -21,7 +21,10 @@ import {
   WORKFLOW_SKILL_SELECTION,
   type SkillSelection,
 } from './skills-install';
-import { rememberCatalogNames } from '../utils/skill-update-notice';
+import {
+  rememberCatalogNames,
+  rememberSkillInstall,
+} from '../utils/skill-update-notice';
 import {
   hasNpx,
   installSkillsNative,
@@ -211,7 +214,7 @@ async function installSkillRepoQuiet(
         stdio: ['ignore', 'pipe', 'pipe'],
         env: cleanNpmEnv(),
       });
-      if (selection.family && skills) await rememberCatalogNames(skills);
+      await rememberSkillInstall(repo, skills);
       const count = parseSkillCount(stdout?.toString() ?? '');
       const suffix = count != null ? ` ${dim}(${count})${reset}` : '';
       const padding = ' '.repeat(20); // clears any leftover "Installing..." text

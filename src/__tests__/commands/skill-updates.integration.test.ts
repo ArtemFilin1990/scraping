@@ -6,7 +6,10 @@ import path from 'path';
 import { createServer, type Server } from 'http';
 import { stripVTControlCharacters } from 'util';
 import { installSkillsNative } from '../../commands/skills-native';
-import { handleSetupCommand } from '../../commands/setup';
+import {
+  handleSetupCommand,
+  installSkillsForAgent,
+} from '../../commands/setup';
 import { maybeShowSkillUpdateNotice } from '../../utils/skill-update-notice';
 import { CATALOG_TREE_URL } from '../../utils/skill-catalog';
 
@@ -86,6 +89,36 @@ describe('skill update lifecycle', () => {
       agent: 'claude-code',
       quiet: true,
     });
+  }
+
+  function mockNpxInstall(names: string[]): void {
+    const execFile = childProcess.execFileSync;
+    const exec = vi.mocked(childProcess.execSync).getMockImplementation()!;
+    vi.mocked(childProcess.execSync).mockImplementation((command, options) =>
+      command === 'npx --version'
+        ? Buffer.from('10.0.0')
+        : exec(command, options)
+    );
+    vi.spyOn(childProcess, 'execFileSync').mockImplementation(
+      (command, args, options) => {
+        if (command === 'git') return execFile(command, args, options);
+        const lockPath = path.join(home, '.agents/.skill-lock.json');
+        const lock = fs.existsSync(lockPath)
+          ? JSON.parse(fs.readFileSync(lockPath, 'utf8'))
+          : { version: 3, skills: {} };
+        for (const name of names) {
+          const family = name === 'firecrawl' ? 'core' : 'workflows';
+          const destination = path.join(home, '.agents/skills', name);
+          fs.mkdirSync(destination, { recursive: true });
+          fs.cpSync(path.join(repo, 'skills', family, name), destination, {
+            recursive: true,
+          });
+          lock.skills[name] = { source: 'firecrawl/skills' };
+        }
+        fs.writeFileSync(lockPath, JSON.stringify(lock));
+        return Buffer.from('Installed');
+      }
+    );
   }
 
   beforeEach(async () => {
@@ -555,6 +588,62 @@ describe('skill update lifecycle', () => {
     );
     expect(notice).toContain('Run firecrawl setup core');
     expect(notice).not.toContain('Run firecrawl setup workflows');
+  });
+
+  it.each(['single skill', 'whole repository'])(
+    'remembers successful npx installs before a skill is removed: %s',
+    async (mode) => {
+      if (mode === 'single skill') {
+        await installSkillsNative('firecrawl/skills', {
+          skills: ['firecrawl-workflows'],
+          agent: 'claude-code',
+          quiet: true,
+        });
+        // An older install has not run a notification check yet.
+        fs.rmSync(path.join(home, '.firecrawl'), {
+          recursive: true,
+          force: true,
+        });
+        mockNpxInstall(['firecrawl-lead-research']);
+        await handleSetupCommand('firecrawl-lead-research', {
+          skipAuthOffer: true,
+        });
+      } else {
+        mockNpxInstall([
+          'firecrawl',
+          'firecrawl-workflows',
+          'firecrawl-lead-research',
+        ]);
+        await installSkillsForAgent('codex', {}, ['firecrawl/skills']);
+      }
+      fs.rmSync(path.join(home, '.agents/skills/firecrawl-lead-research'), {
+        recursive: true,
+      });
+      await maybeShowSkillUpdateNotice({ now, stderr });
+      expect(stderr.write).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps previously seen workflows quiet after an umbrella-only install but announces later additions', async () => {
+    await installSkillsNative('firecrawl/skills', {
+      family: 'core',
+      agent: 'claude-code',
+      quiet: true,
+    });
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    mockNpxInstall(['firecrawl-workflows']);
+    await handleSetupCommand('firecrawl-workflows', { skipAuthOffer: true });
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(stderr.write).not.toHaveBeenCalled();
+    skill('workflows', 'firecrawl-new-workflow');
+    publish();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 21 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('firecrawl setup workflows')
+    );
   });
 
   it('records nothing when an install fails', async () => {
