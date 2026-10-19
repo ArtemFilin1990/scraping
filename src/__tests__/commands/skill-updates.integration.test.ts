@@ -102,7 +102,9 @@ describe('skill update lifecycle', () => {
     vi.spyOn(childProcess, 'execFileSync').mockImplementation(
       (command, args, options) => {
         if (command === 'git') return execFile(command, args, options);
-        const lockPath = path.join(home, '.agents/.skill-lock.json');
+        const lockPath = process.env.XDG_STATE_HOME
+          ? path.join(process.env.XDG_STATE_HOME, 'skills/.skill-lock.json')
+          : path.join(home, '.agents/.skill-lock.json');
         const lock = fs.existsSync(lockPath)
           ? JSON.parse(fs.readFileSync(lockPath, 'utf8'))
           : { version: 3, skills: {} };
@@ -115,6 +117,7 @@ describe('skill update lifecycle', () => {
           });
           lock.skills[name] = { source: 'firecrawl/skills' };
         }
+        fs.mkdirSync(path.dirname(lockPath), { recursive: true });
         fs.writeFileSync(lockPath, JSON.stringify(lock));
         return Buffer.from('Installed');
       }
@@ -176,6 +179,7 @@ describe('skill update lifecycle', () => {
       })
     );
     vi.stubEnv('FIRECRAWL_NO_UPDATE_CHECK', '');
+    vi.stubEnv('XDG_STATE_HOME', undefined);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     stderr = {
       isTTY: true,
@@ -623,6 +627,44 @@ describe('skill update lifecycle', () => {
       expect(stderr.write).not.toHaveBeenCalled();
     }
   );
+
+  it('records npx installs under XDG state and discovers both installer locks', async () => {
+    vi.stubEnv('XDG_STATE_HOME', path.join(home, 'state'));
+    await installSkillsNative('firecrawl/skills', {
+      skills: ['firecrawl'],
+      agent: 'codex',
+      quiet: true,
+    });
+    mockNpxInstall(['firecrawl-workflows', 'firecrawl-lead-research']);
+    await installSkillsForAgent('codex', {}, ['firecrawl/skills']);
+    const cache = JSON.parse(
+      fs.readFileSync(
+        path.join(home, '.firecrawl/skill-update-check.json'),
+        'utf8'
+      )
+    );
+    expect(cache.baseline).toContain('firecrawl-lead-research');
+    fs.rmSync(path.join(home, '.agents/skills/firecrawl-lead-research'), {
+      recursive: true,
+    });
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(stderr.write).not.toHaveBeenCalled();
+    write('skills/core/firecrawl/SKILL.md', 'Updated core skill');
+    write(
+      'skills/workflows/firecrawl-workflows/SKILL.md',
+      'Updated workflow skill'
+    );
+    publish();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 21 * 60 * 60 * 1000),
+      stderr,
+    });
+    const notice = stripVTControlCharacters(
+      String(stderr.write.mock.calls[0][0])
+    );
+    expect(notice).toContain('Run firecrawl setup core');
+    expect(notice).toContain('Run firecrawl setup workflows');
+  });
 
   it('keeps previously seen workflows quiet after an umbrella-only install but announces later additions', async () => {
     await installSkillsNative('firecrawl/skills', {
