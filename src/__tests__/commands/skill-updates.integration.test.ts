@@ -414,11 +414,9 @@ describe('skill update lifecycle', () => {
     publish();
     const later = new Date(now.getTime() + 21 * 60 * 60 * 1000);
     await maybeShowSkillUpdateNotice({ now: later, stderr });
-    expect(stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'Run firecrawl setup firecrawl-lead-research to update.'
-      )
-    );
+    expect(
+      stripVTControlCharacters(String(stderr.write.mock.calls[0][0]))
+    ).toContain('Run firecrawl setup firecrawl-lead-research to update.');
     expect(stderr.write).not.toHaveBeenCalledWith(
       expect.stringContaining('setup workflows')
     );
@@ -440,11 +438,9 @@ describe('skill update lifecycle', () => {
     expect(stderr.write).toHaveBeenCalledWith(
       expect.stringContaining('0 changed, 1 available to add')
     );
-    expect(stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'Run firecrawl setup firecrawl-new-workflow to add.'
-      )
-    );
+    expect(
+      stripVTControlCharacters(String(stderr.write.mock.calls[0][0]))
+    ).toContain('Run firecrawl setup firecrawl-new-workflow to add.');
     stderr.write.mockClear();
     await maybeShowSkillUpdateNotice({
       now: new Date(later.getTime() + 42 * 60 * 60 * 1000),
