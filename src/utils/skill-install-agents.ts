@@ -42,6 +42,8 @@ export function detectGlobalSkillAgents(): string[] {
     'command-code': inHome('.commandcode'),
     continue: [...inHome('.continue'), path.join(cwd, '.continue')],
     cortex: inHome('.snowflake/cortex'),
+    // The installer fixes both Crush detection and installation under ~/.config,
+    // even when XDG_CONFIG_HOME is set. Do not substitute `config` here.
     crush: inHome('.config/crush'),
     cursor: inHome('.cursor'),
     deepagents: inHome('.deepagents'),

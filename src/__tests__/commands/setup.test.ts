@@ -167,6 +167,12 @@ describe('handleSetupCommand', () => {
       configRoot: 'custom config',
     },
     { agent: 'openclaw', directory: '.clawdbot' },
+    {
+      agent: 'crush',
+      directory: '.config/crush',
+      variable: 'XDG_CONFIG_HOME',
+      configRoot: 'custom config',
+    },
     { agent: 'continue', directory: 'project/.continue' },
   ])(
     'detects real configuration paths during setup: $agent',
