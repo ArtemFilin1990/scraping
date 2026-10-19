@@ -33,6 +33,7 @@ interface NoticeCache {
   checkedAt?: number;
   retryAt?: number;
   tree?: unknown;
+  baseline?: string[];
   pendingAdditions?: string[];
   lastShownAt?: number;
 }
@@ -165,7 +166,15 @@ export async function maybeShowSkillUpdateNotice(
       );
     } catch {
       // The first successful check establishes a baseline for new-skill notices.
+      if (
+        Array.isArray(cache.baseline) &&
+        cache.baseline.length > 0 &&
+        cache.baseline.every((name) => typeof name === 'string')
+      ) {
+        previousNames = new Set(cache.baseline);
+      }
     }
+    if (previousNames) cache.baseline = [...previousNames];
     const installation = createHash('sha256')
       .update(
         JSON.stringify(
@@ -193,6 +202,7 @@ export async function maybeShowSkillUpdateNotice(
       try {
         const tree = await fetchCatalogTree(750);
         catalog = parseCatalogTree(tree);
+        cache.baseline = catalog.map((skill) => skill.name);
         cache.tree = tree;
         cache.checkedAt = now;
         delete cache.retryAt;

@@ -296,6 +296,32 @@ describe('skill update lifecycle', () => {
     expect(stderr.write).not.toHaveBeenCalled();
   });
 
+  it('preserves the additions baseline when a post-install catalog refresh fails', async () => {
+    await install();
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    write(
+      'skills/workflows/firecrawl-lead-research/references/brief.md',
+      'Updated reference\n'
+    );
+    publish();
+    await install();
+    status = 503;
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 1000),
+      stderr,
+    });
+    skill('workflows', 'firecrawl-new-workflow');
+    publish();
+    status = 200;
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 61 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('0 changed, 1 available to add')
+    );
+  });
+
   it('handles failed catalog requests silently and backs off before retrying', async () => {
     await install();
     status = 429;
