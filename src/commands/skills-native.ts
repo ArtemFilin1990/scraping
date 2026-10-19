@@ -417,8 +417,8 @@ export async function installSkillsNative(
       throw new Error(`No ${SKILLS_SUBDIR}/ directory found in repository`);
     }
 
-    let skills = discoverSkills(skillsDir);
-    await rememberCatalogNames(skills.map((skill) => skill.name));
+    const discovered = discoverSkills(skillsDir);
+    let skills = discovered;
     if (options.family) {
       skills = skills.filter(
         (skill) => skill.skillPath.split(path.sep)[0] === options.family
@@ -552,6 +552,15 @@ export async function installSkillsNative(
         );
       }
     }
+
+    // Every skill in an installed family counts as seen, including ones the user skipped.
+    const familyOf = (skill: SkillEntry) => skill.skillPath.split(path.sep)[0];
+    const families = new Set(skills.map(familyOf));
+    await rememberCatalogNames(
+      discovered
+        .filter((skill) => families.has(familyOf(skill)))
+        .map((skill) => skill.name)
+    );
 
     return { skillCount: skills.length, linkedAgents };
   } finally {

@@ -21,6 +21,7 @@ import {
   WORKFLOW_SKILL_SELECTION,
   type SkillSelection,
 } from './skills-install';
+import { rememberCatalogNames } from '../utils/skill-update-notice';
 import {
   hasNpx,
   installSkillsNative,
@@ -210,6 +211,7 @@ async function installSkillRepoQuiet(
         stdio: ['ignore', 'pipe', 'pipe'],
         env: cleanNpmEnv(),
       });
+      if (selection.family && skills) await rememberCatalogNames(skills);
       const count = parseSkillCount(stdout?.toString() ?? '');
       const suffix = count != null ? ` ${dim}(${count})${reset}` : '';
       const padding = ' '.repeat(20); // clears any leftover "Installing..." text
@@ -640,15 +642,16 @@ async function stepIntegrations(
       }
       case 'workflows': {
         const { checkbox: pickWorkflows } = await import('@inquirer/prompts');
+        const workflowNames = (await resolveSkillSelection(
+          WORKFLOW_SKILL_SELECTION
+        ))!;
         const chosen = await pickWorkflows<string>({
           message: 'Which workflow skills?',
-          choices: (await resolveSkillSelection(WORKFLOW_SKILL_SELECTION))!.map(
-            (name) => ({
-              name,
-              value: name,
-              checked: true,
-            })
-          ),
+          choices: workflowNames.map((name) => ({
+            name,
+            value: name,
+            checked: true,
+          })),
         });
         if (chosen.length === 0) {
           console.log(`  ${dim}No workflow skills selected.${reset}`);
@@ -663,6 +666,8 @@ async function stepIntegrations(
           );
           skillsInstalled = true;
           if (count != null) totalSkills = (totalSkills ?? 0) + count;
+          // Unticked workflows were seen, so the notice does not offer them back.
+          await rememberCatalogNames(workflowNames);
         } catch {
           console.error(
             `  ${dim}Run "firecrawl setup workflows" later to retry (installs all workflow skills).${reset}`

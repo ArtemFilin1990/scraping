@@ -186,12 +186,7 @@ describe('skill update lifecycle', () => {
     vi.stubEnv('NO_COLOR', undefined);
     vi.stubEnv('FORCE_COLOR', '1');
     await maybeShowSkillUpdateNotice({ now, stderr });
-    expect(stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining('firecrawl setup workflows')
-    );
-    expect(stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining('firecrawl setup workflows')
-    );
+    expect(stderr.write).toHaveBeenCalledOnce();
     const coloredNotice = String(stderr.write.mock.calls[0][0]);
     const notice = stripVTControlCharacters(coloredNotice);
     expect(notice.startsWith('╭')).toBe(true);
@@ -541,6 +536,38 @@ describe('skill update lifecycle', () => {
       stderr,
     });
     expect(stderr.write).not.toHaveBeenCalled();
+  });
+
+  it('records only the installed family, so other families still announce new skills', async () => {
+    await installSkillsNative('firecrawl/skills', {
+      family: 'core',
+      agent: 'claude-code',
+      quiet: true,
+    });
+    // An earlier release left no record; then a core skill is published.
+    fs.rmSync(path.join(home, '.firecrawl'), { recursive: true, force: true });
+    skill('core', 'firecrawl-new-core');
+    publish();
+    await install();
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    const notice = stripVTControlCharacters(
+      String(stderr.write.mock.calls[0][0])
+    );
+    expect(notice).toContain('Run firecrawl setup core');
+    expect(notice).not.toContain('Run firecrawl setup workflows');
+  });
+
+  it('records nothing when an install fails', async () => {
+    await expect(
+      installSkillsNative('firecrawl/skills', {
+        skills: ['firecrawl-missing'],
+        agent: 'claude-code',
+        quiet: true,
+      })
+    ).rejects.toThrow('Skills not found');
+    expect(
+      fs.existsSync(path.join(home, '.firecrawl/skill-update-check.json'))
+    ).toBe(false);
   });
 
   it('abandons a stalled catalog request without blocking the command', async () => {

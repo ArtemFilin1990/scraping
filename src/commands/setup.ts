@@ -19,6 +19,7 @@ import { getApiKey, updateConfig } from '../utils/config';
 import { browserLogin, isAuthenticated } from '../utils/auth';
 import { saveCredentials } from '../utils/credentials';
 import { getCatalogSkills } from '../utils/skill-catalog';
+import { rememberCatalogNames } from '../utils/skill-update-notice';
 import {
   buildSkillsInstallArgs,
   BUILD_SKILL_SELECTION,
@@ -634,6 +635,7 @@ async function installSkills(
           stdio: 'inherit',
           env: cleanNpmEnv(),
         });
+        if (selection.family && skills) await rememberCatalogNames(skills);
         continue;
       } catch {
         process.exit(1);

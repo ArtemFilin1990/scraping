@@ -72,40 +72,43 @@ function validNames(value: unknown): string[] {
     : [];
 }
 
-/** Exclusive cache lock; a lock left by a killed process is claimed by exactly one process. */
+/** Exclusive cache lock; a lock left by a killed process is replaced by one process at a time. */
 async function acquireLock(
   file: string
 ): Promise<(() => Promise<void>) | undefined> {
   const lockPath = `${file}.lock`;
+  const takeover = `${lockPath}.takeover`;
   const release = () => fs.rm(lockPath, { recursive: true, force: true });
+  const isStale = async (directory: string) => {
+    const stat = await fs.stat(directory).catch(() => undefined);
+    return stat !== undefined && Date.now() - stat.mtimeMs >= LOCK_STALE_MS;
+  };
   try {
     await fs.mkdir(lockPath);
     return release;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
-  const stale = await fs.stat(lockPath).catch(() => undefined);
-  if (!stale || Date.now() - stale.mtimeMs < LOCK_STALE_MS) return undefined;
-  // Moving a directory is atomic, so only one process can claim the abandoned lock.
-  const claimed = `${lockPath}.${process.pid}.${Math.random().toString(36).slice(2)}`;
+  if (!(await isStale(lockPath))) return undefined;
+  if (await isStale(takeover)) {
+    await fs.rm(takeover, { recursive: true, force: true });
+  }
   try {
-    await fs.rename(lockPath, claimed);
+    await fs.mkdir(takeover);
   } catch {
     return undefined;
   }
-  const moved = await fs.stat(claimed).catch(() => undefined);
-  if (!moved || moved.ino !== stale.ino || moved.mtimeMs !== stale.mtimeMs) {
-    // Another process already replaced the stale lock; restore its lock.
-    await fs.rename(claimed, lockPath).catch(() => {});
-    return undefined;
-  }
-  await fs.rm(claimed, { recursive: true, force: true });
   try {
+    // Confirm under the takeover lock that nobody replaced the abandoned lock.
+    if (!(await isStale(lockPath))) return undefined;
+    await fs.rm(lockPath, { recursive: true, force: true });
     await fs.mkdir(lockPath);
+    return release;
   } catch {
     return undefined;
+  } finally {
+    await fs.rm(takeover, { recursive: true, force: true });
   }
-  return release;
 }
 
 async function writeCache(file: string, cache: NoticeCache): Promise<void> {
