@@ -449,8 +449,13 @@ describe('skill update lifecycle', () => {
     expect(stderr.write).not.toHaveBeenCalled();
   });
 
-  it('keeps newly discovered skills pending until the notice cooldown expires', async () => {
+  it('keeps new skills pending through cooldown and labels mixed partial updates correctly', async () => {
+    skill('workflows', 'firecrawl-shop');
+    publish();
     await install();
+    fs.rmSync(path.join(home, '.agents/skills/firecrawl-shop'), {
+      recursive: true,
+    });
     write(
       'skills/workflows/firecrawl-lead-research/references/brief.md',
       'Changed reference\n'
@@ -475,6 +480,15 @@ describe('skill update lifecycle', () => {
     });
     expect(stderr.write).toHaveBeenCalledWith(
       expect.stringContaining('1 changed, 1 available to add')
+    );
+    const notice = stripVTControlCharacters(
+      String(stderr.write.mock.calls[0][0])
+    );
+    expect(notice).toContain(
+      'Run firecrawl setup firecrawl-lead-research to update.'
+    );
+    expect(notice).toContain(
+      'Run firecrawl setup firecrawl-new-workflow to add.'
     );
   });
 

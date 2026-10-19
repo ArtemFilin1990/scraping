@@ -242,7 +242,10 @@ export async function maybeShowSkillUpdateNotice(
         for (const target of targets) {
           const command = `firecrawl setup ${target}`;
           commands.push(command);
-          lines.push(`Run ${command} ${updated ? 'to update' : 'to add'}.`);
+          const isUpdate = refreshesWholeFamily
+            ? updated > 0
+            : installed.has(target);
+          lines.push(`Run ${command} to ${isUpdate ? 'update' : 'add'}.`);
         }
       }
       lines.push('', 'See latest skill changes:', CHANGES_URL);

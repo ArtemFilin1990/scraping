@@ -108,9 +108,11 @@ Run the suggested `firecrawl setup` command to refresh skills. Notices use
 individual skill names for partially installed families to preserve skipped
 skills. Explicit `firecrawl setup core`, `firecrawl setup build`, and
 `firecrawl setup workflows` commands install the entire current family, including
-new skills added since your CLI was released. If catalog discovery fails, setup
-warns and uses this CLI release's known names. An explicit refresh replaces
-installed files, including local edits; the notice itself never changes them.
+new skills added since your CLI was released. When installing through npx, failed
+catalog API discovery falls back to this CLI release's known names with a warning.
+Native installs discover skills directly from the Git repository and require that
+repository to be available. An explicit refresh replaces installed files, including
+local edits; the notice itself never changes them.
 
 Checks cover global installations recorded in `~/.agents/.skill-lock.json` with
 files in `~/.agents/skills`. They cache catalog results for 20 hours, repeat the
