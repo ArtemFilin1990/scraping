@@ -130,14 +130,27 @@ describe('handleSetupCommand', () => {
     );
   });
 
-  it('does not silently install an old list when catalog discovery fails', async () => {
-    vi.mocked(getCatalogSkills).mockRejectedValueOnce(
-      new Error('Catalog unavailable')
+  it.each(['Catalog unavailable', 'HTTP 403', 'Invalid catalog response'])(
+    'falls back to release skills with a warning when discovery fails: %s',
+    async (message) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error(message));
+      await handleSetupCommand('workflows', {});
+      expectSkillsInstall(
+        `npx -y skills add firecrawl/skills --full-depth --global --yes ${workflowSkillFlags}`
+      );
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining("using this CLI release's skill list")
+      );
+    }
+  );
+
+  it('installs a newly published skill by full name without catalog discovery', async () => {
+    await handleSetupCommand('firecrawl-new-workflow', {});
+    expect(getCatalogSkills).not.toHaveBeenCalled();
+    expectSkillsInstall(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-new-workflow'
     );
-    await expect(handleSetupCommand('workflows', {})).rejects.toThrow(
-      'Catalog unavailable'
-    );
-    expect(execFileSync).not.toHaveBeenCalled();
   });
 
   it('passes --agent to npx as one argument, never through a shell', async () => {

@@ -2732,7 +2732,11 @@ async function main() {
   }
 
   await maybeShowUpdateNotice();
-  if (!args.includes('init') && !args.includes('setup')) {
+  const isSetup =
+    args[0] === 'init' ||
+    args[0] === 'setup' ||
+    (args.length === 1 && ['-y', '--yes'].includes(args[0]));
+  if (!isSetup) {
     await maybeShowSkillUpdateNotice();
   }
 

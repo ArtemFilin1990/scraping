@@ -128,14 +128,19 @@ export async function resolveSkillSelection(
   selection: SkillSelection
 ): Promise<readonly string[] | undefined> {
   if (!selection.family) return selection.skills;
-  const names = (await getCatalogSkills())
-    .filter((skill) => skill.family === selection.family)
-    .map((skill) => skill.name);
-  if (!names.length)
-    throw new Error(
-      `No ${selection.family} skills found in the catalog. Retry setup later.`
+  try {
+    const names = (await getCatalogSkills())
+      .filter((skill) => skill.family === selection.family)
+      .map((skill) => skill.name);
+    if (!names.length) throw new Error('No matching catalog skills');
+    return names;
+  } catch (error) {
+    if (!selection.skills?.length) throw error;
+    console.error(
+      `Could not refresh the ${selection.family} catalog; using this CLI release's skill list. Newly published skills may be missing.`
     );
-  return names;
+    return selection.skills;
+  }
 }
 
 export interface SkillsInstallCommandOptions {

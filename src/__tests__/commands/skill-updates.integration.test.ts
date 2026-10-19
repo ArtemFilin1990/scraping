@@ -163,6 +163,11 @@ describe('skill update lifecycle', () => {
 
   it('detects reference edits and new workflows, throttles notices, then clears after explicit refresh', async () => {
     await install();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() - 21 * 60 * 60 * 1000),
+      stderr,
+    });
+    requests = 0;
     const installed = path.join(home, '.agents/skills');
     expect(fs.existsSync(path.join(installed, 'firecrawl'))).toBe(false);
     const reference = path.join(
@@ -315,7 +320,10 @@ describe('skill update lifecycle', () => {
     'recovers from an invalid cached %s',
     async (key) => {
       await install();
-      skill('workflows', 'firecrawl-new-workflow');
+      write(
+        'skills/workflows/firecrawl-lead-research/references/brief.md',
+        'Changed reference\n'
+      );
       publish();
       await maybeShowSkillUpdateNotice({ now, stderr });
       const cachePath = path.join(home, '.firecrawl/skill-update-check.json');
@@ -349,6 +357,130 @@ describe('skill update lifecycle', () => {
       }
     }
   );
+
+  it('repairs array-shaped caches and then respects the notice cooldown', async () => {
+    await install();
+    write(
+      'skills/workflows/firecrawl-lead-research/references/brief.md',
+      'Changed reference\n'
+    );
+    publish();
+    const cachePath = path.join(home, '.firecrawl/skill-update-check.json');
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, '[]');
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(requests).toBe(1);
+    expect(stderr.write).toHaveBeenCalledOnce();
+    expect(Array.isArray(JSON.parse(fs.readFileSync(cachePath, 'utf8')))).toBe(
+      false
+    );
+  });
+
+  it('serializes concurrent notice checks and recovers an abandoned lock', async () => {
+    await install();
+    write(
+      'skills/workflows/firecrawl-lead-research/references/brief.md',
+      'Changed reference\n'
+    );
+    publish();
+    const lockPath = path.join(home, '.firecrawl/skill-update-check.json.lock');
+    fs.mkdirSync(lockPath, { recursive: true });
+    const stale = new Date(Date.now() - 60_000);
+    fs.utimesSync(lockPath, stale, stale);
+    await Promise.all(
+      Array.from({ length: 8 }, () =>
+        maybeShowSkillUpdateNotice({ now, stderr })
+      )
+    );
+    expect(requests).toBe(1);
+    expect(stderr.write).toHaveBeenCalledOnce();
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  it('preserves skipped skills and announces only subsequent catalog additions', async () => {
+    skill('workflows', 'firecrawl-shop');
+    publish();
+    await install();
+    fs.rmSync(path.join(home, '.agents/skills/firecrawl-shop'), {
+      recursive: true,
+    });
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    expect(stderr.write).not.toHaveBeenCalled();
+    write(
+      'skills/workflows/firecrawl-lead-research/references/brief.md',
+      'Changed reference\n'
+    );
+    publish();
+    const later = new Date(now.getTime() + 21 * 60 * 60 * 1000);
+    await maybeShowSkillUpdateNotice({ now: later, stderr });
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Run firecrawl setup firecrawl-lead-research to update.'
+      )
+    );
+    expect(stderr.write).not.toHaveBeenCalledWith(
+      expect.stringContaining('setup workflows')
+    );
+    await handleSetupCommand('firecrawl-lead-research', {
+      nativeSkills: true,
+      quiet: true,
+      skipAuthOffer: true,
+    });
+    expect(
+      fs.existsSync(path.join(home, '.agents/skills/firecrawl-shop'))
+    ).toBe(false);
+    skill('workflows', 'firecrawl-new-workflow');
+    publish();
+    stderr.write.mockClear();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(later.getTime() + 21 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('0 changed, 1 available to add')
+    );
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Run firecrawl setup firecrawl-new-workflow to add.'
+      )
+    );
+    stderr.write.mockClear();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(later.getTime() + 42 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).not.toHaveBeenCalled();
+  });
+
+  it('keeps newly discovered skills pending until the notice cooldown expires', async () => {
+    await install();
+    write(
+      'skills/workflows/firecrawl-lead-research/references/brief.md',
+      'Changed reference\n'
+    );
+    publish();
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    skill('workflows', 'firecrawl-new-workflow');
+    publish();
+    const cachePath = path.join(home, '.firecrawl/skill-update-check.json');
+    const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    cache.checkedAt = 0;
+    fs.writeFileSync(cachePath, JSON.stringify(cache));
+    stderr.write.mockClear();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 1000),
+      stderr,
+    });
+    expect(stderr.write).not.toHaveBeenCalled();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 13 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('1 changed, 1 available to add')
+    );
+  });
 
   it('abandons a stalled catalog request without blocking the command', async () => {
     await install();

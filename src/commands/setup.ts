@@ -421,7 +421,8 @@ function resolveCatalogSkill(name: string): string | undefined {
   if (ALL_CATALOG_SKILLS.includes(name)) return name;
   const prefixed = `firecrawl-${name}`;
   if (ALL_CATALOG_SKILLS.includes(prefixed)) return prefixed;
-  return undefined;
+  // Full catalog names are validated by the installer, including future skills.
+  return /^firecrawl(?:-[a-z0-9]+)+$/.test(name) ? name : undefined;
 }
 
 async function handleSetupBundle(options: SetupOptions): Promise<void> {

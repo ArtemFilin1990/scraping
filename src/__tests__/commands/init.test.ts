@@ -168,6 +168,35 @@ describe('handleInitCommand', () => {
     expect(execSync).toHaveBeenCalledTimes(1);
   });
 
+  it('continues interactive workflow installation when catalog discovery fails', async () => {
+    confirmMock
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false);
+    checkboxMock
+      .mockResolvedValueOnce(['workflows'])
+      .mockResolvedValueOnce(['firecrawl-lead-research']);
+    vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error('HTTP 403'));
+    await handleInitCommand({ skipInstall: true, skipAuth: true });
+    expect(checkboxMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Which workflow skills?',
+        choices: WORKFLOW_SKILLS.map((name) => ({
+          name,
+          value: name,
+          checked: true,
+        })),
+      })
+    );
+    expect(execSync).toHaveBeenCalledWith(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-lead-research',
+      expect.anything()
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('Skills installed')
+    );
+  });
+
   it('summarizes native interactive installation independently of its count', async () => {
     confirmMock
       .mockResolvedValueOnce(true)

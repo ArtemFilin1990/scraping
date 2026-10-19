@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { lock as lockCache } from 'proper-lockfile';
 import { colorizeUpdateNotice, formatUpdateBox } from './update-notice-format';
 import {
   fetchCatalogTree,
@@ -32,7 +33,7 @@ interface NoticeCache {
   checkedAt?: number;
   retryAt?: number;
   tree?: unknown;
-  lastShown?: string;
+  pendingAdditions?: string[];
   lastShownAt?: number;
 }
 
@@ -111,6 +112,7 @@ export async function maybeShowSkillUpdateNotice(
   )
     return;
 
+  let releaseLock: (() => Promise<void>) | undefined;
   try {
     const home = options.home ?? os.homedir();
     const lock = (await readJson(
@@ -138,12 +140,31 @@ export async function maybeShowSkillUpdateNotice(
 
     const now = (options.now ?? new Date()).getTime();
     const cachePath = path.join(home, '.firecrawl', 'skill-update-check.json');
+    // Only one process checks and updates this cache; competing commands stay quiet.
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+    let compromised = false;
+    releaseLock = await lockCache(cachePath, {
+      realpath: false,
+      retries: 0,
+      onCompromised: () => {
+        compromised = true;
+      },
+    });
     const value = await readJson(cachePath);
-    const cache: NoticeCache = value && typeof value === 'object' ? value : {};
+    const cache: NoticeCache =
+      value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     for (const key of ['checkedAt', 'retryAt', 'lastShownAt'] as const) {
       if (typeof cache[key] !== 'number' || !Number.isFinite(cache[key])) {
         delete cache[key];
       }
+    }
+    let previousNames: Set<string> | undefined;
+    try {
+      previousNames = new Set(
+        parseCatalogTree(cache.tree).map((skill) => skill.name)
+      );
+    } catch {
+      // The first successful check establishes a baseline for new-skill notices.
     }
     const installation = createHash('sha256')
       .update(
@@ -180,21 +201,25 @@ export async function maybeShowSkillUpdateNotice(
       }
     }
 
+    if (compromised) return;
+    const pendingAdditions = new Set(
+      Array.isArray(cache.pendingAdditions) ? cache.pendingAdditions : []
+    );
     const changes = (catalog ?? []).filter((skill) => {
       const local = installed.get(skill.name);
-      // Offer additional skills only for families with their umbrella installed.
+      // Missing baseline skills may have been deliberately skipped or removed.
       return local
         ? !sameFiles(local, skill.files)
-        : installed.has(FAMILY_ENTRY[skill.family]);
+        : (pendingAdditions.has(skill.name) ||
+            (previousNames !== undefined && !previousNames.has(skill.name))) &&
+            installed.has(FAMILY_ENTRY[skill.family]);
     });
-    const signature = createHash('sha256')
-      .update(JSON.stringify(changes))
-      .digest('hex');
+    cache.pendingAdditions = changes
+      .filter((skill) => !installed.has(skill.name))
+      .map((skill) => skill.name);
     if (
       changes.length &&
-      (cache.lastShown !== signature ||
-        !cache.lastShownAt ||
-        now - cache.lastShownAt > NOTICE_TTL_MS)
+      (!cache.lastShownAt || now - cache.lastShownAt > NOTICE_TTL_MS)
     ) {
       const title = 'Skill updates available!';
       const lines = [`✨ ${title}`];
@@ -208,9 +233,17 @@ export async function maybeShowSkillUpdateNotice(
         lines.push(
           `${family}: ${updated} changed, ${group.length - updated} available to add`
         );
-        const command = `firecrawl setup ${family}`;
-        commands.push(command);
-        lines.push(`Run ${command} to update.`);
+        const refreshesWholeFamily = (catalog ?? [])
+          .filter((skill) => skill.family === family)
+          .every((skill) => installed.has(skill.name) || group.includes(skill));
+        const targets = refreshesWholeFamily
+          ? [family]
+          : group.map((skill) => skill.name);
+        for (const target of targets) {
+          const command = `firecrawl setup ${target}`;
+          commands.push(command);
+          lines.push(`Run ${command} ${updated ? 'to update' : 'to add'}.`);
+        }
       }
       lines.push('', 'See latest skill changes:', CHANGES_URL);
       stderr.write(
@@ -220,15 +253,16 @@ export async function maybeShowSkillUpdateNotice(
           url: CHANGES_URL,
         })}\n\n`
       );
-      cache.lastShown = signature;
       cache.lastShownAt = now;
+      delete cache.pendingAdditions;
     } else if (!changes.length) {
-      delete cache.lastShown;
       delete cache.lastShownAt;
     }
     await fs.mkdir(path.dirname(cachePath), { recursive: true });
     await fs.writeFile(cachePath, JSON.stringify(cache) + '\n');
   } catch {
     // Offline checks, invalid state and cache permissions never fail a command.
+  } finally {
+    await releaseLock?.().catch(() => {});
   }
 }

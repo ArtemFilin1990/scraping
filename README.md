@@ -97,21 +97,24 @@ firecrawl setup workflows
 
 ### Skill updates
 
-Interactive CLI sessions show a boxed notice, matching the CLI update notice,
-when installed Firecrawl skills differ from the current catalog. The check includes
-supporting reference files and runs independently of CLI releases. If a family's
-umbrella skill is installed, the notice also offers other skills available in that
-family.
+Interactive CLI sessions (except `init`, `setup`, and the `-y`/`--yes` init
+shorthand) show a boxed notice when installed Firecrawl skills differ from the
+current catalog. The check includes supporting reference files and runs
+independently of CLI releases. The first successful check establishes a catalog
+baseline. Later checks can announce newly added skills in families whose umbrella
+skill is installed; previously skipped or removed skills are not offered again.
 
-Run the suggested `firecrawl setup core`, `firecrawl setup build`, or
-`firecrawl setup workflows` command to refresh the entire family. These commands
-discover the current catalog contents, including new skills added since your CLI
-was released. An explicit refresh replaces installed files, including local edits;
-the notice itself never changes them.
+Run the suggested `firecrawl setup` command to refresh skills. Notices use
+individual skill names for partially installed families to preserve skipped
+skills. Explicit `firecrawl setup core`, `firecrawl setup build`, and
+`firecrawl setup workflows` commands install the entire current family, including
+new skills added since your CLI was released. If catalog discovery fails, setup
+warns and uses this CLI release's known names. An explicit refresh replaces
+installed files, including local edits; the notice itself never changes them.
 
 Checks cover global installations recorded in `~/.agents/.skill-lock.json` with
 files in `~/.agents/skills`. They cache catalog results for 20 hours, repeat the
-same notice at most once every 12 hours, and retry failed checks after an hour.
+notice at most once every 12 hours, and retry failed checks after an hour.
 Non-interactive runs stay quiet. Set `FIRECRAWL_NO_UPDATE_CHECK=1` to disable both
 CLI and skill update notices.
 
