@@ -8,7 +8,7 @@ Command-line interface for Firecrawl. Search, scrape, interact, crawl, map, sear
 npm install -g firecrawl-cli
 ```
 
-Or set up everything in one command (install CLI globally, authenticate, and add skills across all detected coding editors):
+Or set up everything in one command (install CLI globally, authenticate, and install shared skills for your detected coding editors):
 
 ```bash
 npx -y firecrawl-cli@latest init -y --browser
@@ -16,7 +16,7 @@ npx -y firecrawl-cli@latest init -y --browser
 
 - `-y` runs setup non-interactively
 - `--browser` opens the browser for Firecrawl authentication automatically
-- skills install globally to every detected AI coding agent by default
+- skills install globally in the shared skills directory and are made available to detected AI coding agents by default
 
 ### Setup Skills, Workflows, and MCP
 
@@ -37,7 +37,7 @@ firecrawl setup seo-audit
 
 If no API key is found afterwards, an interactive terminal offers a browser login (pass `--browser` to log in without the prompt); non-interactive runs never block — they print a hint and the skills walk agents through setup on first use.
 
-These install globally for the coding editors detected by Firecrawl by default. If none are detected, skills are installed in the shared `~/.agents/skills` directory. Use `--agent <agent>` to target a specific editor, including one outside Firecrawl's automatic detection list.
+Default installs use the shared `~/.agents/skills` directory and the coding editors detected by Firecrawl. The npx installer always includes Codex as the shared-directory target, even when Codex is not detected, preserving shared files and agent links. If no editors are detected, only the shared directory is populated. Use `--agent <agent>` to target a specific editor, including one outside Firecrawl's automatic detection list.
 
 #### Scope setup to a single harness
 
