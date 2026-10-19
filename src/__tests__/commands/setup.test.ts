@@ -42,6 +42,19 @@ import { configureWebDefaults } from '../../utils/web-defaults';
 import { getApiKey } from '../../utils/config';
 import { browserLogin, isAuthenticated } from '../../utils/auth';
 import { saveCredentials } from '../../utils/credentials';
+import { getCatalogSkills } from '../../utils/skill-catalog';
+
+vi.mock('../../utils/skill-catalog', () => ({
+  getCatalogSkills: vi.fn(async () => [
+    ...CLI_SKILLS.map((name) => ({ name, family: 'core', files: {} })),
+    ...BUILD_SKILLS.map((name) => ({ name, family: 'build', files: {} })),
+    ...WORKFLOW_SKILLS.map((name) => ({
+      name,
+      family: 'workflows',
+      files: {},
+    })),
+  ]),
+}));
 
 vi.mock('child_process', () => ({
   execFileSync: vi.fn(),
@@ -104,6 +117,63 @@ describe('handleSetupCommand', () => {
 
   it('ships the Alexandria skill in the core set', () => {
     expect(CLI_SKILLS).toContain('firecrawl-alexandria');
+  });
+
+  it('refreshes the current workflow catalog, including skills absent from this CLI release', async () => {
+    vi.mocked(getCatalogSkills).mockResolvedValueOnce([
+      { name: 'firecrawl-new-workflow', family: 'workflows', files: {} },
+      { name: 'firecrawl-build', family: 'build', files: {} },
+    ]);
+    await handleSetupCommand('workflows', { agent: 'cursor' });
+    expectSkillsInstall(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor --skill firecrawl-new-workflow'
+    );
+  });
+
+  it.each(['Catalog unavailable', 'HTTP 403', 'Invalid catalog response'])(
+    'falls back to release skills with a warning when discovery fails: %s',
+    async (message) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error(message));
+      await handleSetupCommand('workflows', {});
+      expectSkillsInstall(
+        `npx -y skills add firecrawl/skills --full-depth --global --yes ${workflowSkillFlags}`
+      );
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining("using this CLI release's skill list")
+      );
+    }
+  );
+
+  it('installs a newly published skill by full name once the catalog lists it', async () => {
+    vi.mocked(getCatalogSkills).mockResolvedValueOnce([
+      { name: 'firecrawl-new-workflow', family: 'workflows', files: {} },
+    ]);
+    await handleSetupCommand('firecrawl-new-workflow', {});
+    expectSkillsInstall(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-new-workflow'
+    );
+  });
+
+  it('rejects a full skill name the catalog does not list', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`process.exit:${code}`);
+    }) as never);
+    await expect(
+      handleSetupCommand('firecrawl-typo-workflow', {})
+    ).rejects.toThrow('process.exit:1');
+    expect(execFileSync).not.toHaveBeenCalled();
+    exit.mockRestore();
+  });
+
+  it('accepts a full skill name when the catalog cannot be reached', async () => {
+    vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error('offline'));
+    await handleSetupCommand('firecrawl-new-workflow', {});
+    expectSkillsInstall(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-new-workflow'
+    );
   });
 
   it('passes --agent to npx as one argument, never through a shell', async () => {
