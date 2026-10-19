@@ -141,6 +141,27 @@ export async function rememberCatalogNames(
   }
 }
 
+/** Record a successful npx install, including installs without an explicit skill list. */
+export async function rememberSkillInstall(
+  repo: string,
+  names?: readonly string[]
+): Promise<void> {
+  if (!SOURCES.has(repo)) return;
+  if (names) return rememberCatalogNames(names);
+  try {
+    const lock = (await readJson(
+      path.join(os.homedir(), '.agents', '.skill-lock.json')
+    )) as { skills?: Record<string, { source?: string } | null> } | undefined;
+    await rememberCatalogNames(
+      Object.entries(lock?.skills ?? {})
+        .filter(([, entry]) => entry?.source === repo)
+        .map(([name]) => name)
+    );
+  } catch {
+    // Missing or malformed installer state never fails a successful install.
+  }
+}
+
 type InstalledFiles = Record<string, string[]>;
 
 function blobHash(content: Buffer): string {
