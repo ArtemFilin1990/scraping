@@ -635,7 +635,7 @@ async function installSkills(
           stdio: 'inherit',
           env: cleanNpmEnv(),
         });
-        await rememberSkillInstall(repo, skills);
+        await rememberSkillInstall(repo, skills, selection.family);
         continue;
       } catch {
         process.exit(1);

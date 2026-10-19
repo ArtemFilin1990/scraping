@@ -5,6 +5,7 @@ import path from 'path';
 import { colorizeUpdateNotice, formatUpdateBox } from './update-notice-format';
 import {
   fetchCatalogTree,
+  getCatalogSkills,
   isSkillFile,
   parseCatalogTree,
   type CatalogSkill,
@@ -170,10 +171,32 @@ export async function rememberCatalogNames(
 /** Record a successful npx install, including installs without an explicit skill list. */
 export async function rememberSkillInstall(
   repo: string,
-  names?: readonly string[]
+  names?: readonly string[],
+  family?: SkillFamily
 ): Promise<void> {
   if (!SOURCES.has(repo)) return;
-  if (names) return rememberCatalogNames(names);
+  if (names) {
+    const seen = [...names];
+    // Whole-family selections already contain the discovered catalog members.
+    if (!family) {
+      try {
+        const catalog = await getCatalogSkills();
+        const families = new Set(
+          catalog
+            .filter((skill) => names.includes(skill.name))
+            .map((skill) => skill.family)
+        );
+        seen.push(
+          ...catalog
+            .filter((skill) => families.has(skill.family))
+            .map((skill) => skill.name)
+        );
+      } catch {
+        // Catalog outages must not fail an install or lose the selected names.
+      }
+    }
+    return rememberCatalogNames(seen);
+  }
   try {
     const skills = await readInstalledSkills(os.homedir());
     await rememberCatalogNames(

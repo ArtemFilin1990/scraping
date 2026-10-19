@@ -214,7 +214,7 @@ async function installSkillRepoQuiet(
         stdio: ['ignore', 'pipe', 'pipe'],
         env: cleanNpmEnv(),
       });
-      await rememberSkillInstall(repo, skills);
+      await rememberSkillInstall(repo, skills, selection.family);
       const count = parseSkillCount(stdout?.toString() ?? '');
       const suffix = count != null ? ` ${dim}(${count})${reset}` : '';
       const padding = ' '.repeat(20); // clears any leftover "Installing..." text
