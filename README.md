@@ -104,10 +104,9 @@ independently of CLI releases. The first successful check establishes a catalog
 baseline. Later checks can announce newly added skills in families whose umbrella
 skill is installed; previously skipped or removed skills are not offered again.
 
-Run the suggested `firecrawl setup` command to refresh skills. Notices use
-individual skill names for partially installed families to preserve skipped
-skills. Explicit `firecrawl setup core`, `firecrawl setup build`, and
-`firecrawl setup workflows` commands install the entire current family, including
+Each affected family gets one refresh command: `firecrawl setup core`,
+`firecrawl setup build`, or `firecrawl setup workflows`. These commands install
+the entire current family, including previously skipped skills and
 new skills added since your CLI was released. When installing through npx, failed
 catalog API discovery falls back to this CLI release's known names with a warning.
 Native installs discover skills directly from the Git repository and require that

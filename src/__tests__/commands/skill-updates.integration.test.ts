@@ -197,7 +197,9 @@ describe('skill update lifecycle', () => {
     expect(notice.startsWith('╭')).toBe(true);
     expect(notice.trimEnd().endsWith('╯')).toBe(true);
     expect(notice).toContain('✨ Skill updates available!');
-    expect(notice).toContain('Run firecrawl setup workflows to update.');
+    expect(notice).toContain(
+      'Run firecrawl setup workflows to update the full family.'
+    );
     expect(notice).toContain(
       'https://github.com/firecrawl/skills/commits/main/'
     );
@@ -432,7 +434,7 @@ describe('skill update lifecycle', () => {
     expect(fs.existsSync(lockPath)).toBe(false);
   });
 
-  it('preserves skipped skills and announces only subsequent catalog additions', async () => {
+  it('does not nag about skipped skills and offers a single family refresh command', async () => {
     skill('workflows', 'firecrawl-shop');
     publish();
     await install();
@@ -450,9 +452,9 @@ describe('skill update lifecycle', () => {
     await maybeShowSkillUpdateNotice({ now: later, stderr });
     expect(
       stripVTControlCharacters(String(stderr.write.mock.calls[0][0]))
-    ).toContain('Run firecrawl setup firecrawl-lead-research to update.');
-    expect(stderr.write).not.toHaveBeenCalledWith(
-      expect.stringContaining('setup workflows')
+    ).toContain('Run firecrawl setup workflows to update the full family.');
+    expect(String(stderr.write.mock.calls[0][0])).not.toContain(
+      'setup firecrawl-'
     );
     await handleSetupCommand('firecrawl-lead-research', {
       nativeSkills: true,
@@ -474,7 +476,7 @@ describe('skill update lifecycle', () => {
     );
     expect(
       stripVTControlCharacters(String(stderr.write.mock.calls[0][0]))
-    ).toContain('Run firecrawl setup firecrawl-new-workflow to add.');
+    ).toContain('Run firecrawl setup workflows to add the full family.');
     stderr.write.mockClear();
     await maybeShowSkillUpdateNotice({
       now: new Date(later.getTime() + 42 * 60 * 60 * 1000),
@@ -483,7 +485,7 @@ describe('skill update lifecycle', () => {
     expect(stderr.write).not.toHaveBeenCalled();
   });
 
-  it('keeps new skills pending through cooldown and labels mixed partial updates correctly', async () => {
+  it('keeps new skills pending through cooldown and shows one command for mixed updates', async () => {
     skill('workflows', 'firecrawl-shop');
     publish();
     await install();
@@ -519,11 +521,10 @@ describe('skill update lifecycle', () => {
       String(stderr.write.mock.calls[0][0])
     );
     expect(notice).toContain(
-      'Run firecrawl setup firecrawl-lead-research to update.'
+      'Run firecrawl setup workflows to update the full family.'
     );
-    expect(notice).toContain(
-      'Run firecrawl setup firecrawl-new-workflow to add.'
-    );
+    expect(notice.match(/Run firecrawl setup workflows/g)).toHaveLength(1);
+    expect(notice).not.toContain('setup firecrawl-');
   });
 
   it('abandons a stalled catalog request without blocking the command', async () => {

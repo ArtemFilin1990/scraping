@@ -246,20 +246,11 @@ export async function maybeShowSkillUpdateNotice(
         lines.push(
           `${family}: ${updated} changed, ${group.length - updated} available to add`
         );
-        const refreshesWholeFamily = (catalog ?? [])
-          .filter((skill) => skill.family === family)
-          .every((skill) => installed.has(skill.name) || group.includes(skill));
-        const targets = refreshesWholeFamily
-          ? [family]
-          : group.map((skill) => skill.name);
-        for (const target of targets) {
-          const command = `firecrawl setup ${target}`;
-          commands.push(command);
-          const isUpdate = refreshesWholeFamily
-            ? updated > 0
-            : installed.has(target);
-          lines.push(`Run ${command} to ${isUpdate ? 'update' : 'add'}.`);
-        }
+        const command = `firecrawl setup ${family}`;
+        commands.push(command);
+        lines.push(
+          `Run ${command} to ${updated ? 'update' : 'add'} the full family.`
+        );
       }
       lines.push('', 'See latest skill changes:', CHANGES_URL);
       stderr.write(
