@@ -46,6 +46,7 @@ vi.mock('@inquirer/prompts', () => ({
 describe('handleInitCommand', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(skillsNative.detectInstalledAgentNames).mockReturnValue([]);
     process.exitCode = 0;
     getApiKeyMock.mockReturnValue(undefined);
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -66,11 +67,11 @@ describe('handleInitCommand', () => {
     });
 
     expect(execSync).toHaveBeenCalledWith(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes ${cliSkillFlags}`,
+      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${cliSkillFlags}`,
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
     expect(execSync).toHaveBeenCalledWith(
-      `npx -y skills add firecrawl/skills --full-depth --global --yes ${workflowSkillFlags}`,
+      `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${workflowSkillFlags}`,
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
     // Build skills are intentionally no longer installed by init.
@@ -78,6 +79,22 @@ describe('handleInitCommand', () => {
       expect.stringContaining('firecrawl-build'),
       expect.anything()
     );
+  });
+
+  it('preserves detected targets when native installation falls back to npx', async () => {
+    vi.mocked(skillsNative.detectInstalledAgentNames).mockReturnValue([
+      'claude-code',
+      'cursor',
+    ]);
+
+    await handleInitCommand({ yes: true, skipInstall: true, skipAuth: true });
+
+    for (const flags of [cliSkillFlags, workflowSkillFlags]) {
+      expect(execSync).toHaveBeenCalledWith(
+        `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex claude-code cursor ${flags}`,
+        expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
+      );
+    }
   });
 
   it('scopes non-interactive skills install to one agent when provided', async () => {

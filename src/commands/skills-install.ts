@@ -13,6 +13,8 @@
  * `firecrawl setup build` installs build skills, and
  * `firecrawl setup workflows` installs workflow skills.
  */
+import { detectInstalledAgentNames } from './skills-native';
+
 export const SKILL_REPOS = ['firecrawl/cli', 'firecrawl/skills'] as const;
 
 export const WORKFLOW_SKILL_REPOS = ['firecrawl/firecrawl-workflows'] as const;
@@ -146,8 +148,7 @@ export function buildSkillsInstallArgs(
 
   // `skills add --all` means "ALL skills to all agents" and overrides any
   // --skill filter, so a skill-scoped install must never pass it. Scoped
-  // installs use --yes instead: same promptless install to every detected
-  // agent, but the --skill list is respected.
+  // installs use --yes instead so the --skill list is respected.
   const skillScoped = Boolean(options.skills?.length);
   const installToAllAgents =
     !skillScoped && (options.agent ? false : (options.all ?? true));
@@ -161,6 +162,12 @@ export function buildSkillsInstallArgs(
 
   if (options.agent) {
     args.push('--agent', options.agent);
+  } else if (skillScoped && (options.global ?? true)) {
+    // The installer's automatic targets include agents without global support.
+    // Keep the shared ~/.agents/skills location via codex, plus native installs'
+    // detected targets. This preserves symlinks even with one detected agent.
+    const agents = new Set(['codex', ...detectInstalledAgentNames()]);
+    args.push('--agent', ...agents);
   }
 
   // `skills add` collects space-separated names after a single --skill flag.
