@@ -100,11 +100,11 @@ firecrawl setup workflows
 Interactive CLI sessions (except `init`, `setup`, and the `-y`/`--yes` init
 shorthand) show a boxed notice when installed Firecrawl skills differ from the
 current catalog. The check includes supporting reference files and runs
-independently of CLI releases. The first successful check establishes a catalog
-baseline. Later checks can announce newly added skills in families whose umbrella
-skill is installed; previously skipped or removed skills are not offered again.
+independently of CLI releases. Installs record which catalog skills existed, so
+the notice announces skills published later, once, in families whose umbrella
+skill is installed. Skills skipped during setup are not offered again.
 
-Each affected family gets one refresh command: `firecrawl setup core`,
+Each affected family gets one command: `firecrawl setup core`,
 `firecrawl setup build`, or `firecrawl setup workflows`. These commands install
 the entire current family, including previously skipped skills and
 new skills added since your CLI was released. When installing through npx, failed

@@ -18,6 +18,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { getApiKey, updateConfig } from '../utils/config';
 import { browserLogin, isAuthenticated } from '../utils/auth';
 import { saveCredentials } from '../utils/credentials';
+import { getCatalogSkills } from '../utils/skill-catalog';
 import {
   buildSkillsInstallArgs,
   BUILD_SKILL_SELECTION,
@@ -324,7 +325,7 @@ export async function handleSetupCommand(
       await handleMakeDefaultCommand(options);
       break;
     default: {
-      const skill = resolveCatalogSkill(subcommand);
+      const skill = await resolveCatalogSkill(subcommand);
       if (skill) {
         await installSkills(options, [
           { repo: CATALOG_REPO, skills: [skill], label: `${skill} skill` },
@@ -417,12 +418,18 @@ const ALL_CATALOG_SKILLS: readonly string[] = [
  * matched before this runs, so `build` means the group while `firecrawl-build`
  * still reaches the skill.
  */
-function resolveCatalogSkill(name: string): string | undefined {
+async function resolveCatalogSkill(name: string): Promise<string | undefined> {
   if (ALL_CATALOG_SKILLS.includes(name)) return name;
   const prefixed = `firecrawl-${name}`;
   if (ALL_CATALOG_SKILLS.includes(prefixed)) return prefixed;
-  // Full catalog names are validated by the installer, including future skills.
-  return /^firecrawl(?:-[a-z0-9]+)+$/.test(name) ? name : undefined;
+  if (!/^firecrawl(?:-[a-z0-9]+)+$/.test(name)) return undefined;
+  // Skills published after this release: confirm against the catalog when it is reachable.
+  try {
+    const catalog = await getCatalogSkills();
+    return catalog.some((skill) => skill.name === name) ? name : undefined;
+  } catch {
+    return name;
+  }
 }
 
 async function handleSetupBundle(options: SetupOptions): Promise<void> {

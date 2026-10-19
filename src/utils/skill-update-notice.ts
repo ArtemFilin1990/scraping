@@ -2,7 +2,6 @@ import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { lock as lockCache } from 'proper-lockfile';
 import { colorizeUpdateNotice, formatUpdateBox } from './update-notice-format';
 import {
   fetchCatalogTree,
@@ -15,6 +14,8 @@ import {
 const CHECK_TTL_MS = 20 * 60 * 60 * 1000;
 const NOTICE_TTL_MS = 12 * 60 * 60 * 1000;
 const RETRY_TTL_MS = 60 * 60 * 1000;
+const LOCK_STALE_MS = 30 * 1000;
+const SKILL_NAME = /^firecrawl(?:-[a-z0-9]+)*$/;
 const CHANGES_URL = 'https://github.com/firecrawl/skills/commits/main/';
 const SOURCES = new Set([
   'firecrawl/skills',
@@ -49,6 +50,91 @@ async function readJson(file: string): Promise<unknown> {
     return JSON.parse(await fs.readFile(file, 'utf8'));
   } catch {
     return undefined;
+  }
+}
+
+function cachePathFor(home: string): string {
+  return path.join(home, '.firecrawl', 'skill-update-check.json');
+}
+
+function readCache(value: unknown): NoticeCache {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as NoticeCache)
+    : {};
+}
+
+function validNames(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (name): name is string =>
+          typeof name === 'string' && SKILL_NAME.test(name)
+      )
+    : [];
+}
+
+/** Exclusive cache lock; a lock left by a killed process is claimed by exactly one process. */
+async function acquireLock(
+  file: string
+): Promise<(() => Promise<void>) | undefined> {
+  const lockPath = `${file}.lock`;
+  const release = () => fs.rm(lockPath, { recursive: true, force: true });
+  try {
+    await fs.mkdir(lockPath);
+    return release;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  const stale = await fs.stat(lockPath).catch(() => undefined);
+  if (!stale || Date.now() - stale.mtimeMs < LOCK_STALE_MS) return undefined;
+  // Moving a directory is atomic, so only one process can claim the abandoned lock.
+  const claimed = `${lockPath}.${process.pid}.${Math.random().toString(36).slice(2)}`;
+  try {
+    await fs.rename(lockPath, claimed);
+  } catch {
+    return undefined;
+  }
+  const moved = await fs.stat(claimed).catch(() => undefined);
+  if (!moved || moved.ino !== stale.ino || moved.mtimeMs !== stale.mtimeMs) {
+    // Another process already replaced the stale lock; restore its lock.
+    await fs.rename(claimed, lockPath).catch(() => {});
+    return undefined;
+  }
+  await fs.rm(claimed, { recursive: true, force: true });
+  try {
+    await fs.mkdir(lockPath);
+  } catch {
+    return undefined;
+  }
+  return release;
+}
+
+async function writeCache(file: string, cache: NoticeCache): Promise<void> {
+  const temp = `${file}.${process.pid}.tmp`;
+  await fs.writeFile(temp, JSON.stringify(cache) + '\n');
+  await fs.rename(temp, file);
+}
+
+/** Record the catalog seen at install time so skipped skills are not offered as new. */
+export async function rememberCatalogNames(
+  names: readonly string[],
+  home = os.homedir()
+): Promise<void> {
+  try {
+    const cachePath = cachePathFor(home);
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+    const release = await acquireLock(cachePath);
+    if (!release) return;
+    try {
+      const cache = readCache(await readJson(cachePath));
+      cache.baseline = [
+        ...new Set([...validNames(cache.baseline), ...validNames(names)]),
+      ].sort();
+      await writeCache(cachePath, cache);
+    } finally {
+      await release().catch(() => {});
+    }
+  } catch {
+    // Recording the baseline is best effort and never fails an install.
   }
 }
 
@@ -122,11 +208,7 @@ export async function maybeShowSkillUpdateNotice(
     if (!lock?.skills || typeof lock.skills !== 'object') return;
     const installed = new Map<string, InstalledFiles>();
     for (const [name, entry] of Object.entries(lock.skills)) {
-      if (
-        !/^firecrawl(?:-[a-z0-9]+)*$/.test(name) ||
-        !entry ||
-        !SOURCES.has(entry.source ?? '')
-      )
+      if (!SKILL_NAME.test(name) || !entry || !SOURCES.has(entry.source ?? ''))
         continue;
       try {
         const files = await installedFiles(
@@ -140,44 +222,28 @@ export async function maybeShowSkillUpdateNotice(
     if (!installed.size) return;
 
     const now = (options.now ?? new Date()).getTime();
-    const cachePath = path.join(home, '.firecrawl', 'skill-update-check.json');
+    const cachePath = cachePathFor(home);
     // Only one process checks and updates this cache; competing commands stay quiet.
     await fs.mkdir(path.dirname(cachePath), { recursive: true });
-    let compromised = false;
-    releaseLock = await lockCache(cachePath, {
-      realpath: false,
-      retries: 0,
-      onCompromised: () => {
-        compromised = true;
-      },
-    });
-    const value = await readJson(cachePath);
-    const cache: NoticeCache =
-      value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    releaseLock = await acquireLock(cachePath);
+    if (!releaseLock) return;
+    const cache = readCache(await readJson(cachePath));
     for (const key of ['checkedAt', 'retryAt', 'lastShownAt'] as const) {
       if (typeof cache[key] !== 'number' || !Number.isFinite(cache[key])) {
         delete cache[key];
       }
     }
-    let previousNames: Set<string> | undefined;
+    // Skills known before this check: the cached catalog plus names recorded at install.
+    const known = validNames(cache.baseline);
     try {
-      previousNames = new Set(
-        parseCatalogTree(cache.tree).map((skill) => skill.name)
-      );
+      known.push(...parseCatalogTree(cache.tree).map((skill) => skill.name));
     } catch {
-      // The first successful check establishes a baseline for new-skill notices.
-      if (
-        Array.isArray(cache.baseline) &&
-        cache.baseline.length > 0 &&
-        cache.baseline.every(
-          (name) =>
-            typeof name === 'string' && /^firecrawl(?:-[a-z0-9]+)*$/.test(name)
-        )
-      ) {
-        previousNames = new Set(cache.baseline);
-      }
+      // No cached catalog yet.
     }
-    if (previousNames) cache.baseline = [...previousNames];
+    // With no record yet (an install by an earlier release), every skill missing from
+    // a family with its umbrella installed is offered once.
+    const previousNames = new Set(known);
+    cache.baseline = [...previousNames].sort();
     const installation = createHash('sha256')
       .update(
         JSON.stringify(
@@ -205,7 +271,9 @@ export async function maybeShowSkillUpdateNotice(
       try {
         const tree = await fetchCatalogTree(750);
         catalog = parseCatalogTree(tree);
-        cache.baseline = catalog.map((skill) => skill.name);
+        cache.baseline = [
+          ...new Set([...previousNames, ...catalog.map((skill) => skill.name)]),
+        ].sort();
         cache.tree = tree;
         cache.checkedAt = now;
         delete cache.retryAt;
@@ -214,7 +282,6 @@ export async function maybeShowSkillUpdateNotice(
       }
     }
 
-    if (compromised) return;
     const pendingAdditions = new Set(
       Array.isArray(cache.pendingAdditions) ? cache.pendingAdditions : []
     );
@@ -224,7 +291,7 @@ export async function maybeShowSkillUpdateNotice(
       return local
         ? !sameFiles(local, skill.files)
         : (pendingAdditions.has(skill.name) ||
-            (previousNames !== undefined && !previousNames.has(skill.name))) &&
+            !previousNames.has(skill.name)) &&
             installed.has(FAMILY_ENTRY[skill.family]);
     });
     cache.pendingAdditions = changes
@@ -238,19 +305,10 @@ export async function maybeShowSkillUpdateNotice(
       const lines = [`✨ ${title}`];
       const commands: string[] = [];
       for (const family of ['core', 'build', 'workflows'] as const) {
-        const group = changes.filter((skill) => skill.family === family);
-        if (!group.length) continue;
-        const updated = group.filter((skill) =>
-          installed.has(skill.name)
-        ).length;
-        lines.push(
-          `${family}: ${updated} changed, ${group.length - updated} available to add`
-        );
+        if (!changes.some((skill) => skill.family === family)) continue;
         const command = `firecrawl setup ${family}`;
         commands.push(command);
-        lines.push(
-          `Run ${command} to ${updated ? 'update' : 'add'} the full family.`
-        );
+        lines.push(`Run ${command}`);
       }
       lines.push('', 'See latest skill changes:', CHANGES_URL);
       stderr.write(
@@ -265,8 +323,7 @@ export async function maybeShowSkillUpdateNotice(
     } else if (!changes.length) {
       delete cache.lastShownAt;
     }
-    await fs.mkdir(path.dirname(cachePath), { recursive: true });
-    await fs.writeFile(cachePath, JSON.stringify(cache) + '\n');
+    await writeCache(cachePath, cache);
   } catch {
     // Offline checks, invalid state and cache permissions never fail a command.
   } finally {

@@ -145,9 +145,32 @@ describe('handleSetupCommand', () => {
     }
   );
 
-  it('installs a newly published skill by full name without catalog discovery', async () => {
+  it('installs a newly published skill by full name once the catalog lists it', async () => {
+    vi.mocked(getCatalogSkills).mockResolvedValueOnce([
+      { name: 'firecrawl-new-workflow', family: 'workflows', files: {} },
+    ]);
     await handleSetupCommand('firecrawl-new-workflow', {});
-    expect(getCatalogSkills).not.toHaveBeenCalled();
+    expectSkillsInstall(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-new-workflow'
+    );
+  });
+
+  it('rejects a full skill name the catalog does not list', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`process.exit:${code}`);
+    }) as never);
+    await expect(
+      handleSetupCommand('firecrawl-typo-workflow', {})
+    ).rejects.toThrow('process.exit:1');
+    expect(execFileSync).not.toHaveBeenCalled();
+    exit.mockRestore();
+  });
+
+  it('accepts a full skill name when the catalog cannot be reached', async () => {
+    vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error('offline'));
+    await handleSetupCommand('firecrawl-new-workflow', {});
     expectSkillsInstall(
       'npx -y skills add firecrawl/skills --full-depth --global --yes --skill firecrawl-new-workflow'
     );

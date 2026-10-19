@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import type { SkillFamily } from '../utils/skill-catalog';
+import { rememberCatalogNames } from '../utils/skill-update-notice';
 
 const green = '\x1b[32m';
 const dim = '\x1b[2m';
@@ -417,6 +418,7 @@ export async function installSkillsNative(
     }
 
     let skills = discoverSkills(skillsDir);
+    await rememberCatalogNames(skills.map((skill) => skill.name));
     if (options.family) {
       skills = skills.filter(
         (skill) => skill.skillPath.split(path.sep)[0] === options.family

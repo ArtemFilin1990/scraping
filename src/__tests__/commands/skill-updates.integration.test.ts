@@ -187,7 +187,7 @@ describe('skill update lifecycle', () => {
     vi.stubEnv('FORCE_COLOR', '1');
     await maybeShowSkillUpdateNotice({ now, stderr });
     expect(stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining('workflows: 1 changed, 1 available to add')
+      expect.stringContaining('firecrawl setup workflows')
     );
     expect(stderr.write).toHaveBeenCalledWith(
       expect.stringContaining('firecrawl setup workflows')
@@ -197,9 +197,7 @@ describe('skill update lifecycle', () => {
     expect(notice.startsWith('╭')).toBe(true);
     expect(notice.trimEnd().endsWith('╯')).toBe(true);
     expect(notice).toContain('✨ Skill updates available!');
-    expect(notice).toContain(
-      'Run firecrawl setup workflows to update the full family.'
-    );
+    expect(notice).toContain('Run firecrawl setup workflows');
     expect(notice).toContain(
       'https://github.com/firecrawl/skills/commits/main/'
     );
@@ -320,7 +318,7 @@ describe('skill update lifecycle', () => {
       stderr,
     });
     expect(stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining('0 changed, 1 available to add')
+      expect.stringContaining('firecrawl setup workflows')
     );
   });
 
@@ -405,7 +403,7 @@ describe('skill update lifecycle', () => {
       expect(requests).toBe(1);
       expect(stderr.write).toHaveBeenCalledOnce();
       expect(stderr.write).toHaveBeenCalledWith(
-        expect.stringContaining('1 changed, 0 available to add')
+        expect.stringContaining('firecrawl setup workflows')
       );
       expect(
         Array.isArray(JSON.parse(fs.readFileSync(cachePath, 'utf8')))
@@ -452,7 +450,7 @@ describe('skill update lifecycle', () => {
     await maybeShowSkillUpdateNotice({ now: later, stderr });
     expect(
       stripVTControlCharacters(String(stderr.write.mock.calls[0][0]))
-    ).toContain('Run firecrawl setup workflows to update the full family.');
+    ).toContain('Run firecrawl setup workflows');
     expect(String(stderr.write.mock.calls[0][0])).not.toContain(
       'setup firecrawl-'
     );
@@ -472,11 +470,11 @@ describe('skill update lifecycle', () => {
       stderr,
     });
     expect(stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining('0 changed, 1 available to add')
+      expect.stringContaining('firecrawl setup workflows')
     );
     expect(
       stripVTControlCharacters(String(stderr.write.mock.calls[0][0]))
-    ).toContain('Run firecrawl setup workflows to add the full family.');
+    ).toContain('Run firecrawl setup workflows');
     stderr.write.mockClear();
     await maybeShowSkillUpdateNotice({
       now: new Date(later.getTime() + 42 * 60 * 60 * 1000),
@@ -515,16 +513,34 @@ describe('skill update lifecycle', () => {
       stderr,
     });
     expect(stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining('1 changed, 1 available to add')
+      expect.stringContaining('firecrawl setup workflows')
     );
     const notice = stripVTControlCharacters(
       String(stderr.write.mock.calls[0][0])
     );
-    expect(notice).toContain(
-      'Run firecrawl setup workflows to update the full family.'
-    );
+    expect(notice).toContain('Run firecrawl setup workflows');
     expect(notice.match(/Run firecrawl setup workflows/g)).toHaveLength(1);
     expect(notice).not.toContain('setup firecrawl-');
+  });
+
+  it('tells users of an earlier release about newly published skills once', async () => {
+    await install();
+    // Earlier releases recorded no baseline, so only the installed skills are known.
+    fs.rmSync(path.join(home, '.firecrawl'), { recursive: true, force: true });
+    skill('workflows', 'firecrawl-new-workflow');
+    publish();
+    await maybeShowSkillUpdateNotice({ now, stderr });
+    const notice = stripVTControlCharacters(
+      String(stderr.write.mock.calls[0][0])
+    );
+    expect(notice).toContain('Run firecrawl setup workflows');
+    expect(notice).not.toContain('available to add');
+    stderr.write.mockClear();
+    await maybeShowSkillUpdateNotice({
+      now: new Date(now.getTime() + 13 * 60 * 60 * 1000),
+      stderr,
+    });
+    expect(stderr.write).not.toHaveBeenCalled();
   });
 
   it('abandons a stalled catalog request without blocking the command', async () => {

@@ -14,6 +14,7 @@
  * `firecrawl setup workflows` installs workflow skills.
  */
 import { getCatalogSkills, type SkillFamily } from '../utils/skill-catalog';
+import { rememberCatalogNames } from '../utils/skill-update-notice';
 
 export const SKILL_REPOS = ['firecrawl/cli', 'firecrawl/skills'] as const;
 
@@ -129,7 +130,9 @@ export async function resolveSkillSelection(
 ): Promise<readonly string[] | undefined> {
   if (!selection.family) return selection.skills;
   try {
-    const names = (await getCatalogSkills())
+    const catalog = await getCatalogSkills();
+    await rememberCatalogNames(catalog.map((skill) => skill.name));
+    const names = catalog
       .filter((skill) => skill.family === selection.family)
       .map((skill) => skill.name);
     if (!names.length) throw new Error('No matching catalog skills');
