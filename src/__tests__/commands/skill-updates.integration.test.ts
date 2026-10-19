@@ -311,6 +311,45 @@ describe('skill update lifecycle', () => {
     expect(stderr.write).not.toHaveBeenCalled();
   });
 
+  it.each(['checkedAt', 'retryAt', 'lastShownAt'] as const)(
+    'recovers from an invalid cached %s',
+    async (key) => {
+      await install();
+      skill('workflows', 'firecrawl-new-workflow');
+      publish();
+      await maybeShowSkillUpdateNotice({ now, stderr });
+      const cachePath = path.join(home, '.firecrawl/skill-update-check.json');
+      const original = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+
+      for (const invalid of [
+        '"invalid"',
+        '"123"',
+        '{}',
+        'true',
+        'null',
+        '1e400',
+      ]) {
+        const cache = { ...original };
+        if (key === 'retryAt') cache.checkedAt = 0;
+        delete cache[key];
+        fs.writeFileSync(
+          cachePath,
+          `${JSON.stringify(cache).slice(0, -1)},"${key}":${invalid}}`
+        );
+        requests = 0;
+        stderr.write.mockClear();
+        await maybeShowSkillUpdateNotice({ now, stderr });
+        expect(requests).toBe(key === 'lastShownAt' ? 0 : 1);
+        expect(stderr.write).toHaveBeenCalledTimes(
+          key === 'lastShownAt' ? 1 : 0
+        );
+        const repaired = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+        if (key === 'retryAt') expect(repaired).not.toHaveProperty(key);
+        else expect(repaired[key]).toBe(now.getTime());
+      }
+    }
+  );
+
   it('abandons a stalled catalog request without blocking the command', async () => {
     await install();
     stalled = true;

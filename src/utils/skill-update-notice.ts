@@ -140,6 +140,11 @@ export async function maybeShowSkillUpdateNotice(
     const cachePath = path.join(home, '.firecrawl', 'skill-update-check.json');
     const value = await readJson(cachePath);
     const cache: NoticeCache = value && typeof value === 'object' ? value : {};
+    for (const key of ['checkedAt', 'retryAt', 'lastShownAt'] as const) {
+      if (typeof cache[key] !== 'number' || !Number.isFinite(cache[key])) {
+        delete cache[key];
+      }
+    }
     const installation = createHash('sha256')
       .update(
         JSON.stringify(
