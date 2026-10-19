@@ -1,11 +1,24 @@
+import { detectGlobalSkillAgents } from '../../utils/skill-install-agents';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'child_process';
 import * as skillsNative from '../../commands/skills-native';
 import { handleInitCommand } from '../../commands/init';
 import { CLI_SKILLS, WORKFLOW_SKILLS } from '../../commands/skills-install';
+import { getCatalogSkills } from '../../utils/skill-catalog';
 
 const cliSkillFlags = `--skill ${CLI_SKILLS.join(' ')}`;
 const workflowSkillFlags = `--skill ${WORKFLOW_SKILLS.join(' ')}`;
+
+vi.mock('../../utils/skill-catalog', () => ({
+  getCatalogSkills: vi.fn(async () => [
+    ...CLI_SKILLS.map((name) => ({ name, family: 'core', files: {} })),
+    ...WORKFLOW_SKILLS.map((name) => ({
+      name,
+      family: 'workflows',
+      files: {},
+    })),
+  ]),
+}));
 
 const { installMcpMock, getApiKeyMock, confirmMock, checkboxMock } = vi.hoisted(
   () => ({
@@ -18,6 +31,10 @@ const { installMcpMock, getApiKeyMock, confirmMock, checkboxMock } = vi.hoisted(
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
+}));
+
+vi.mock('../../utils/skill-install-agents', () => ({
+  detectGlobalSkillAgents: vi.fn(() => []),
 }));
 
 vi.mock('../../commands/skills-native', () => ({
@@ -46,6 +63,7 @@ vi.mock('@inquirer/prompts', () => ({
 describe('handleInitCommand', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(detectGlobalSkillAgents).mockReturnValue([]);
     vi.mocked(skillsNative.detectInstalledAgentNames).mockReturnValue([]);
     process.exitCode = 0;
     getApiKeyMock.mockReturnValue(undefined);
@@ -87,6 +105,11 @@ describe('handleInitCommand', () => {
       'cursor',
     ]);
 
+    vi.mocked(detectGlobalSkillAgents).mockReturnValue([
+      'claude-code',
+      'cursor',
+    ]);
+
     await handleInitCommand({ yes: true, skipInstall: true, skipAuth: true });
 
     for (const flags of [cliSkillFlags, workflowSkillFlags]) {
@@ -111,6 +134,21 @@ describe('handleInitCommand', () => {
     );
     expect(execSync).toHaveBeenCalledWith(
       `npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor ${workflowSkillFlags}`,
+      expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
+    );
+  });
+
+  it('installs newly published workflows during non-interactive init', async () => {
+    vi.mocked(getCatalogSkills)
+      .mockResolvedValueOnce(
+        CLI_SKILLS.map((name) => ({ name, family: 'core', files: {} }))
+      )
+      .mockResolvedValueOnce([
+        { name: 'firecrawl-new-workflow', family: 'workflows', files: {} },
+      ]);
+    await handleInitCommand({ yes: true, skipInstall: true, skipAuth: true });
+    expect(execSync).toHaveBeenCalledWith(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-new-workflow',
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
   });
@@ -156,6 +194,35 @@ describe('handleInitCommand', () => {
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
     expect(execSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues interactive workflow installation when catalog discovery fails', async () => {
+    confirmMock
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false);
+    checkboxMock
+      .mockResolvedValueOnce(['workflows'])
+      .mockResolvedValueOnce(['firecrawl-lead-research']);
+    vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error('HTTP 403'));
+    await handleInitCommand({ skipInstall: true, skipAuth: true });
+    expect(checkboxMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Which workflow skills?',
+        choices: WORKFLOW_SKILLS.map((name) => ({
+          name,
+          value: name,
+          checked: true,
+        })),
+      })
+    );
+    expect(execSync).toHaveBeenCalledWith(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-lead-research',
+      expect.anything()
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('Skills installed')
+    );
   });
 
   it('summarizes native interactive installation independently of its count', async () => {

@@ -37,7 +37,7 @@ firecrawl setup seo-audit
 
 If no API key is found afterwards, an interactive terminal offers a browser login (pass `--browser` to log in without the prompt); non-interactive runs never block — they print a hint and the skills walk agents through setup on first use.
 
-Default installs use the shared `~/.agents/skills` directory and the coding editors detected by Firecrawl. The npx installer always includes Codex as the shared-directory target, even when Codex is not detected, preserving shared files and agent links. If no editors are detected, only the shared directory is populated. Use `--agent <agent>` to target a specific editor, including one outside Firecrawl's automatic detection list.
+Default installs use the shared `~/.agents/skills` directory and the coding editors detected by Firecrawl. The npx installer always includes Codex as the shared-directory target, even when Codex is not detected, preserving shared files and agent links. If no editors are detected, only the shared directory is populated. The npx path detects supported global targets, including Kiro and custom configuration locations such as `CLAUDE_CONFIG_DIR` and `XDG_CONFIG_HOME`. Project-only targets are excluded. Use `--agent <agent>` to target a specific editor.
 
 #### Scope setup to a single harness
 
@@ -94,6 +94,32 @@ firecrawl setup core
 firecrawl setup build
 firecrawl setup workflows
 ```
+
+### Skill updates
+
+Interactive CLI sessions (except `init`, `setup`, and the `-y`/`--yes` init
+shorthand) show a boxed notice when installed Firecrawl skills differ from the
+current catalog. The check includes supporting reference files and runs
+independently of CLI releases. Installs record which catalog skills existed, so
+the notice announces skills published later, once, in families whose umbrella
+skill is installed. Skills skipped during setup are not offered again.
+
+Each affected family gets one command: `firecrawl setup core`,
+`firecrawl setup build`, or `firecrawl setup workflows`. These commands install
+the entire current family, including previously skipped skills and
+new skills added since your CLI was released. When installing through npx, failed
+catalog API discovery falls back to this CLI release's known names with a warning.
+Native installs discover skills directly from the Git repository and require that
+repository to be available. An explicit refresh replaces installed files, including
+local edits; the notice itself never changes them.
+
+Checks cover global installations recorded in `~/.agents/.skill-lock.json` with
+files in `~/.agents/skills`. They cache catalog results for 20 hours, repeat the
+notice at most once every 12 hours, and retry failed checks after an hour.
+Non-interactive runs stay quiet. Set `FIRECRAWL_NO_UPDATE_CHECK=1` to disable both
+CLI and skill update notices.
+
+### MCP and web defaults
 
 To install the Firecrawl MCP server into your editors (Cursor, Claude Code, VS Code, etc.):
 

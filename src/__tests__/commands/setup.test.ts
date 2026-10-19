@@ -26,11 +26,10 @@ import {
   WORKFLOW_SKILLS,
 } from '../../commands/skills-install';
 
-import { detectInstalledAgentNames } from '../../commands/skills-native';
+import { detectGlobalSkillAgents } from '../../utils/skill-install-agents';
 
-vi.mock('../../commands/skills-native', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../commands/skills-native')>()),
-  detectInstalledAgentNames: vi.fn(() => []),
+vi.mock('../../utils/skill-install-agents', () => ({
+  detectGlobalSkillAgents: vi.fn(() => []),
 }));
 
 const cliSkillFlags = `--skill ${CLI_SKILLS.join(' ')}`;
@@ -49,6 +48,19 @@ import { configureWebDefaults } from '../../utils/web-defaults';
 import { getApiKey } from '../../utils/config';
 import { browserLogin, isAuthenticated } from '../../utils/auth';
 import { saveCredentials } from '../../utils/credentials';
+import { getCatalogSkills } from '../../utils/skill-catalog';
+
+vi.mock('../../utils/skill-catalog', () => ({
+  getCatalogSkills: vi.fn(async () => [
+    ...CLI_SKILLS.map((name) => ({ name, family: 'core', files: {} })),
+    ...BUILD_SKILLS.map((name) => ({ name, family: 'build', files: {} })),
+    ...WORKFLOW_SKILLS.map((name) => ({
+      name,
+      family: 'workflows',
+      files: {},
+    })),
+  ]),
+}));
 
 vi.mock('child_process', () => ({
   execFileSync: vi.fn(),
@@ -82,7 +94,7 @@ describe('handleSetupCommand', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(detectInstalledAgentNames).mockReturnValue([]);
+    vi.mocked(detectGlobalSkillAgents).mockReturnValue([]);
     vi.mocked(getApiKey).mockReturnValue('fc-test-key');
     vi.mocked(isAuthenticated).mockReturnValue(true);
     vi.mocked(browserLogin).mockResolvedValue({
@@ -119,7 +131,7 @@ describe('handleSetupCommand', () => {
   ])(
     'passes detected global targets explicitly: $targets',
     async ({ agents, targets }) => {
-      vi.mocked(detectInstalledAgentNames).mockReturnValue(agents);
+      vi.mocked(detectGlobalSkillAgents).mockReturnValue(agents);
 
       await handleSetupCommand('workflows', {});
 
@@ -130,18 +142,132 @@ describe('handleSetupCommand', () => {
   );
 
   it('keeps an explicit target instead of adding detected agents', async () => {
-    vi.mocked(detectInstalledAgentNames).mockReturnValue(['claude-code']);
+    vi.mocked(detectGlobalSkillAgents).mockReturnValue(['claude-code']);
 
     await handleSetupCommand('core', { agent: 'cursor' });
 
     expectSkillsInstall(
       `npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor ${cliSkillFlags}`
     );
-    expect(detectInstalledAgentNames).not.toHaveBeenCalled();
+    expect(detectGlobalSkillAgents).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { agent: 'kiro-cli', directory: '.kiro' },
+    {
+      agent: 'claude-code',
+      directory: 'custom claude',
+      variable: 'CLAUDE_CONFIG_DIR',
+      configRoot: 'custom claude',
+    },
+    {
+      agent: 'opencode',
+      directory: 'custom config/opencode',
+      variable: 'XDG_CONFIG_HOME',
+      configRoot: 'custom config',
+    },
+    { agent: 'openclaw', directory: '.clawdbot' },
+    { agent: 'continue', directory: 'project/.continue' },
+  ])(
+    'detects real configuration paths during setup: $agent',
+    async (testCase) => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'skill-targets-'));
+      const { detectGlobalSkillAgents: detect } = await vi.importActual<
+        typeof import('../../utils/skill-install-agents')
+      >('../../utils/skill-install-agents');
+      vi.mocked(detectGlobalSkillAgents).mockImplementation(detect);
+      vi.spyOn(os, 'homedir').mockReturnValue(root);
+      vi.spyOn(process, 'cwd').mockReturnValue(path.join(root, 'project'));
+      for (const variable of ['CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME']) {
+        vi.stubEnv(variable, '');
+      }
+      try {
+        mkdirSync(path.join(root, testCase.directory), { recursive: true });
+        mkdirSync(path.join(root, 'project/.promptscript'), {
+          recursive: true,
+        });
+        if (testCase.variable) {
+          vi.stubEnv(testCase.variable, path.join(root, testCase.configRoot!));
+        }
+
+        await handleSetupCommand('workflows', {});
+
+        expect(execFileSync).toHaveBeenCalledWith(
+          'npx',
+          expect.arrayContaining(['--agent', 'codex', testCase.agent]),
+          expect.objectContaining({ stdio: 'inherit' })
+        );
+        const install = vi
+          .mocked(execFileSync)
+          .mock.calls.find(([bin]) => bin === 'npx');
+        expect(install?.[1]).not.toContain('promptscript');
+        expect(install?.[1]).not.toContain('eve');
+      } finally {
+        vi.unstubAllEnvs();
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
 
   it('ships the Alexandria skill in the core set', () => {
     expect(CLI_SKILLS).toContain('firecrawl-alexandria');
+  });
+
+  it('refreshes the current workflow catalog, including skills absent from this CLI release', async () => {
+    vi.mocked(getCatalogSkills).mockResolvedValueOnce([
+      { name: 'firecrawl-new-workflow', family: 'workflows', files: {} },
+      { name: 'firecrawl-build', family: 'build', files: {} },
+    ]);
+    await handleSetupCommand('workflows', { agent: 'cursor' });
+    expectSkillsInstall(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent cursor --skill firecrawl-new-workflow'
+    );
+  });
+
+  it.each(['Catalog unavailable', 'HTTP 403', 'Invalid catalog response'])(
+    'falls back to release skills with a warning when discovery fails: %s',
+    async (message) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error(message));
+      await handleSetupCommand('workflows', {});
+      expectSkillsInstall(
+        `npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex ${workflowSkillFlags}`
+      );
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining("using this CLI release's skill list")
+      );
+    }
+  );
+
+  it('installs a newly published skill by full name once the catalog lists it', async () => {
+    vi.mocked(getCatalogSkills).mockResolvedValueOnce([
+      { name: 'firecrawl-new-workflow', family: 'workflows', files: {} },
+    ]);
+    await handleSetupCommand('firecrawl-new-workflow', {});
+    expectSkillsInstall(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-new-workflow'
+    );
+  });
+
+  it('rejects a full skill name the catalog does not list', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: number
+    ) => {
+      throw new Error(`process.exit:${code}`);
+    }) as never);
+    await expect(
+      handleSetupCommand('firecrawl-typo-workflow', {})
+    ).rejects.toThrow('process.exit:1');
+    expect(execFileSync).not.toHaveBeenCalled();
+    exit.mockRestore();
+  });
+
+  it('accepts a full skill name when the catalog cannot be reached', async () => {
+    vi.mocked(getCatalogSkills).mockRejectedValueOnce(new Error('offline'));
+    await handleSetupCommand('firecrawl-new-workflow', {});
+    expectSkillsInstall(
+      'npx -y skills add firecrawl/skills --full-depth --global --yes --agent codex --skill firecrawl-new-workflow'
+    );
   });
 
   it('passes --agent to npx as one argument, never through a shell', async () => {
